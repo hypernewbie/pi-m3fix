@@ -1,0 +1,43 @@
+{
+  "name": "pi-m3fix",
+  "version": "0.1.0",
+  "description": "Pi extension that repairs flattened reasoning blocks in compacted sessions",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "session-repair",
+    "m3"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hypernewbie/pi-m3fix.git"
+  },
+  "scripts": {
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@earendil-works/pi-ai": "^0.80.3",
+    "@types/node": "^24.12.4",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.9"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ]
+}
