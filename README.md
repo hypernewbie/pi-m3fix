@@ -48,6 +48,7 @@ Options:
 - `--model <id>` — override the target model.
 - `--no-relabel` — skip provider/API/model relabeling.
 - `--no-unflatten` — skip text-to-thinking repair.
+- `--allow-empty-signature` — force the signature/unflatten repair even if compat metadata is missing/unproven for the current model. Use this for custom providers (e.g. MiniMax M3 through an anthropic-messages-compatible endpoint) that tolerate empty thinking signatures but don't have `compat.allowEmptySignature: true` registered.
 
 ## Behavior
 
@@ -59,7 +60,14 @@ For assistant messages, `/m3fix` can:
 
 Active context is computed from Pi's session tree using the current leaf and compaction metadata, so branched sessions are handled correctly.
 
-Signature clearing and text-to-thinking repair are limited to compatible Anthropic Messages reasoning models. If you pass an explicit `--api anthropic-messages` target, that is treated as an opt-in for the repair. Redacted thinking blocks are never modified.
+Signature clearing and text-to-thinking repair only run for compatible Anthropic Messages reasoning models. "Compatible" is determined like this:
+
+- If you pass an explicit `--provider`/`--api`/`--model` target with `--api anthropic-messages`, the repair runs — this is treated as an informed opt-in, same as the original `underp.py` script, and does not require `compat.allowEmptySignature` to be registered.
+- If you rely on the currently selected model (no explicit target), the repair only runs if that model's registry entry has `compat.allowEmptySignature: true`. Otherwise it's skipped with a warning, unless you pass `--allow-empty-signature` to force it.
+
+If the repair is skipped, `provider`/`api`/`model` relabeling and signature blanking still happen, but leaked-reasoning text blocks are **not** converted back into `thinking` blocks — leaving corrupted context that the model can imitate on the next turn. If your model output starts degrading right after `/m3fix`, check the notification for a "does not have compat.allowEmptySignature=true" warning and re-run with `--allow-empty-signature` or explicit `--provider/--api/--model` flags.
+
+Redacted thinking blocks are never modified.
 
 ## Safety
 

@@ -57,6 +57,7 @@ async function runM3Fix(args: string, ctx: ExtensionCommandContext) {
 	const resolved = resolveTargetModel({
 		currentModel: ctx.model,
 		explicit: options.target,
+		forceAllowEmptySignature: options.allowEmptySignature,
 	});
 
 	if (!resolved) {

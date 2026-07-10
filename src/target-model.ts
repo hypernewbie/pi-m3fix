@@ -14,8 +14,24 @@ export interface CompatibilityResult {
 export function resolveTargetModel(options: {
 	currentModel?: Model<any>;
 	explicit?: { provider?: string; api?: string; model?: string };
+	forceAllowEmptySignature?: boolean;
 }): { target: TargetModel; source: "current" | "explicit"; compat: CompatibilityResult } | undefined {
-	// Explicit overrides take precedence
+	if (options.forceAllowEmptySignature) {
+		const target = resolveTarget(options);
+		if (!target) return undefined;
+		return {
+			target: target.value,
+			source: target.source,
+			compat: {
+				compatible: true,
+				reason: "--allow-empty-signature forced the repair regardless of compat metadata.",
+			},
+		};
+	}
+
+	// Explicit overrides take precedence. If the caller explicitly names a target,
+	// trust them the same way underp.py does: don't gate on registry metadata that
+	// may not exist for custom/proxy providers.
 	if (options.explicit && (options.explicit.provider || options.explicit.api || options.explicit.model)) {
 		const target: TargetModel = {
 			provider: options.explicit.provider ?? options.currentModel?.provider ?? "",
@@ -30,11 +46,12 @@ export function resolveTargetModel(options: {
 		return {
 			target,
 			source: "explicit",
-			compat: checkExplicitCompat(target, options.currentModel),
+			compat: checkExplicitCompat(target),
 		};
 	}
 
-	// Fall back to current model
+	// Fall back to current model, and require registry-confirmed compat since we
+	// have no explicit instruction from the caller.
 	const model = options.currentModel;
 	if (!model) {
 		return undefined;
@@ -53,28 +70,43 @@ export function resolveTargetModel(options: {
 	};
 }
 
-function checkExplicitCompat(target: TargetModel, currentModel?: Model<any>): CompatibilityResult {
-	// If the explicit target matches the current model, we can use its compat info
-	if (
-		currentModel &&
-		currentModel.provider === target.provider &&
-		currentModel.api === target.api &&
-		currentModel.id === target.model
-	) {
-		return checkModelCompat(currentModel);
+function resolveTarget(options: {
+	currentModel?: Model<any>;
+	explicit?: { provider?: string; api?: string; model?: string };
+}): { value: TargetModel; source: "current" | "explicit" } | undefined {
+	if (options.explicit && (options.explicit.provider || options.explicit.api || options.explicit.model)) {
+		const target: TargetModel = {
+			provider: options.explicit.provider ?? options.currentModel?.provider ?? "",
+			api: options.explicit.api ?? options.currentModel?.api ?? "",
+			model: options.explicit.model ?? options.currentModel?.id ?? "",
+		};
+		if (!target.provider || !target.api || !target.model) return undefined;
+		return { value: target, source: "explicit" };
 	}
 
-	// Otherwise we only know the API; empty-signature repair is only defined for anthropic-messages
+	const model = options.currentModel;
+	if (!model) return undefined;
+	return {
+		value: { provider: model.provider, api: model.api, model: model.id },
+		source: "current",
+	};
+}
+
+function checkExplicitCompat(target: TargetModel): CompatibilityResult {
+	// We only know the API string here; empty-signature repair is only defined for
+	// anthropic-messages. Registry compat metadata is not consulted for explicit
+	// targets because custom/proxy providers frequently omit it even when the
+	// backend tolerates empty signatures. Use --no-unflatten to opt out.
 	if (target.api !== "anthropic-messages") {
 		return {
 			compatible: false,
-			reason: `Target API is "${target.api}". The signature/unflatten repair only applies to anthropic-messages models with allowEmptySignature.`,
+			reason: `Target API is "${target.api}". The signature/unflatten repair only applies to anthropic-messages models.`,
 		};
 	}
 
 	return {
 		compatible: true,
-		reason: "Target API is anthropic-messages, but compat.allowEmptySignature could not be verified because the model was specified explicitly.",
+		reason: "Target API is anthropic-messages. Explicit target trusted; pass --no-unflatten to skip signature/unflatten repair.",
 	};
 }
 
@@ -82,7 +114,7 @@ function checkModelCompat(model: Model<any>): CompatibilityResult {
 	if (model.api !== "anthropic-messages") {
 		return {
 			compatible: false,
-			reason: `Current model API is "${model.api}". The signature/unflatten repair only applies to anthropic-messages models with allowEmptySignature.`,
+			reason: `Current model API is "${model.api}". The signature/unflatten repair only applies to anthropic-messages models.`,
 		};
 	}
 
@@ -90,7 +122,7 @@ function checkModelCompat(model: Model<any>): CompatibilityResult {
 	if (compat.allowEmptySignature !== true) {
 		return {
 			compatible: false,
-			reason: `Current model ${model.provider}/${model.id} does not have compat.allowEmptySignature=true.`,
+			reason: `Current model ${model.provider}/${model.id} does not have compat.allowEmptySignature=true. Pass --allow-empty-signature to force the repair anyway.`,
 		};
 	}
 
