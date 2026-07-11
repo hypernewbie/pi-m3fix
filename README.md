@@ -101,3 +101,18 @@ npm test
 npm run typecheck
 npm pack --dry-run
 ```
+
+## Releasing (maintainers)
+
+CI publishes to npm via [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers/) — no npm token involved. To cut a release:
+
+1. Bump `version` in `package.json`.
+2. Commit, then tag `vX.Y.Z` matching that version and push both:
+   ```bash
+   git tag -a vX.Y.Z -m "vX.Y.Z"
+   git push origin main
+   git push origin vX.Y.Z
+   ```
+3. CI runs tests, verifies the tag matches `package.json`'s version, then publishes via OIDC. Provenance is generated automatically.
+
+The npm package's Trusted Publisher is configured to only accept publishes from this repo's `.github/workflows/ci.yml` workflow. Publishing access via classic/granular tokens is disabled on npmjs.com ("Require two-factor authentication and disallow tokens"), so a compromised or misconfigured token cannot publish a release.

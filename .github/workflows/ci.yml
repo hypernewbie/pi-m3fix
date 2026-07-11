@@ -55,6 +55,9 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
+      - name: Use latest npm (trusted publishing needs npm >= 11.5.1)
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: npm ci
 
@@ -67,7 +70,10 @@ jobs:
             exit 1
           fi
 
+      # OIDC trusted publishing: npm CLI auto-detects the GitHub Actions OIDC
+      # token via the id-token: write permission above and exchanges it for a
+      # short-lived publish credential. No NPM_TOKEN needed. Provenance is
+      # generated automatically for trusted-publishing publishes, so no
+      # --provenance flag either.
       - name: Publish to npm
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

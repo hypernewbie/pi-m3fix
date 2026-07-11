@@ -6,6 +6,12 @@
 - Added CI publish job that runs on `v*` tags, gated on tests passing and the tag
   matching `package.json`'s version.
 - Added npm install instructions to README.
+- CI publishing moved to npm's [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers/)
+  instead of a long-lived `NPM_TOKEN`. This follows npm's own migration guidance
+  ([2FA-bypass token deprecation](https://github.blog/changelog/2026-07-08-npm-install-time-security-and-gat-bypass2fa-deprecation/)):
+  2FA-bypass tokens lose the ability to publish directly starting ~January 2027.
+  The CI workflow now authenticates via GitHub Actions OIDC (`id-token: write`)
+  and npm CLI >= 11.5.1; no `NPM_TOKEN` secret is used for publishing.
 
 ## 0.2.0
 
