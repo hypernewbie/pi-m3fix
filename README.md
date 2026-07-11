@@ -4,17 +4,19 @@ Pi extension for repairing session files affected by flattened reasoning blocks.
 
 ## Install
 
-Recommended install from GitHub:
-
-```bash
-pi install git:github.com/hypernewbie/pi-m3fix@v0.1.0
-```
-
-Install the latest `main` branch instead:
+Recommended install (latest `main`):
 
 ```bash
 pi install git:github.com/hypernewbie/pi-m3fix
 ```
+
+Pin to a specific released version instead:
+
+```bash
+pi install git:github.com/hypernewbie/pi-m3fix@v0.2.0
+```
+
+`v0.1.0` is broken (see [CHANGELOG.md](CHANGELOG.md)) and has been removed. Do not install it.
 
 Local development checkout:
 
