@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- Published to npm as `pi-m3fix`.
+- Added CI publish job that runs on `v*` tags, gated on tests passing and the tag
+  matching `package.json`'s version.
+- Added npm install instructions to README.
+
 ## 0.2.0
 
 - **Fix:** the auto-detect compat check (used when `/m3fix` is run with no explicit

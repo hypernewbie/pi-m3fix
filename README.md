@@ -1,22 +1,37 @@
 # pi-m3fix
 
+[![CI](https://github.com/hypernewbie/pi-m3fix/actions/workflows/ci.yml/badge.svg)](https://github.com/hypernewbie/pi-m3fix/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/pi-m3fix.svg)](https://www.npmjs.com/package/pi-m3fix)
+
 Pi extension for repairing session files affected by flattened reasoning blocks.
 
 ## Install
 
-Recommended install (latest `main`):
+From npm (recommended, versioned):
+
+```bash
+pi install npm:pi-m3fix
+```
+
+Pin to a specific version:
+
+```bash
+pi install npm:pi-m3fix@0.2.1
+```
+
+From GitHub, latest `main`:
 
 ```bash
 pi install git:github.com/hypernewbie/pi-m3fix
 ```
 
-Pin to a specific released version instead:
+From GitHub, pinned to a released tag:
 
 ```bash
-pi install git:github.com/hypernewbie/pi-m3fix@v0.2.0
+pi install git:github.com/hypernewbie/pi-m3fix@v0.2.1
 ```
 
-`v0.1.0` is broken (see [CHANGELOG.md](CHANGELOG.md)) and has been removed. Do not install it.
+`v0.1.0` was broken (see [CHANGELOG.md](CHANGELOG.md)) and has been removed. Do not install it.
 
 Local development checkout:
 

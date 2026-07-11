@@ -1,6 +1,6 @@
 {
   "name": "pi-m3fix",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi extension that repairs flattened reasoning blocks in compacted sessions",
   "type": "module",
   "keywords": [
@@ -13,6 +13,11 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/hypernewbie/pi-m3fix.git"
+  },
+  "homepage": "https://github.com/hypernewbie/pi-m3fix",
+  "bugs": "https://github.com/hypernewbie/pi-m3fix/issues",
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "test": "vitest --run",
