@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- First release published entirely through CI via OIDC trusted publishing
+  (no npm token involved). Confirms the trusted publisher / "require 2FA and
+  disallow tokens" setup works end-to-end.
+
 ## 0.2.1
 
 - Published to npm as `pi-m3fix`.
