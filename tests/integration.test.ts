@@ -16,9 +16,6 @@ describe("extension entry point", () => {
 			registerCommand: (name: string, options: { description?: string; handler: unknown }) => {
 				commands.push({ name, ...options });
 			},
-			registerFlag: () => {},
-			getFlag: () => false,
-			on: () => {},
 		};
 		mod.default(mockApi as any);
 
@@ -26,21 +23,5 @@ describe("extension entry point", () => {
 		expect(commands[0].name).toBe("m3fix");
 		expect(commands[0].description).toContain("Repair flattened reasoning");
 		expect(typeof commands[0].handler).toBe("function");
-	});
-
-	it("registers the live auto-fix flag and message_end handler", async () => {
-		const mod = await import(EXTENSION_PATH);
-		const flags: string[] = [];
-		const events: string[] = [];
-		const mockApi = {
-			registerCommand: () => {},
-			registerFlag: (name: string) => flags.push(name),
-			getFlag: () => false,
-			on: (event: string) => events.push(event),
-		};
-		mod.default(mockApi as any);
-
-		expect(flags).toContain("m3fix-no-live");
-		expect(events).toContain("message_end");
 	});
 });

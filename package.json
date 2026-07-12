@@ -1,6 +1,6 @@
 {
   "name": "pi-m3fix",
-  "version": "0.3.0",
+  "version": "0.2.3",
   "description": "Pi extension that repairs flattened reasoning blocks in compacted sessions",
   "type": "module",
   "keywords": [
