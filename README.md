@@ -3,7 +3,8 @@
 [![CI](https://github.com/hypernewbie/pi-m3fix/actions/workflows/ci.yml/badge.svg)](https://github.com/hypernewbie/pi-m3fix/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/pi-m3fix.svg)](https://www.npmjs.com/package/pi-m3fix)
 
-Pi extension for repairing session files affected by flattened reasoning blocks.
+Pi extension that fixes M3's flattened reasoning: **live**, as it happens, plus a
+manual command to repair session files recorded before this was installed.
 
 ## Install
 
@@ -39,9 +40,30 @@ Local development checkout:
 pi install /path/to/pi-m3fix
 ```
 
-Restart Pi or run `/reload`, then use `/m3fix`.
+Restart Pi or run `/reload`. The live auto-fix is on immediately, no command
+needed. Use `/m3fix` only to repair sessions recorded before installing.
 
-## Usage
+## Live auto-fix
+
+As soon as this extension is loaded, it hooks Pi's `message_end` event and
+intercepts every assistant message the instant it's finalized — before it is
+ever written to the session file. If a text block is entirely M3's flattened
+reasoning (bold-phrase segments, no prose), it's converted to a `thinking`
+block with an empty signature right there. Leaked reasoning never gets a
+chance to sit in the session file.
+
+This is the fundamental improvement over `underp.py` and over running `/m3fix`
+manually: both of those are reactive, one-shot repairs of whatever's already in
+the file. If you keep chatting with M3, both `underp.py` and `/m3fix` need to
+be re-run over and over, and there's always a live turn on screen that's still
+leaking until you next run them. The live auto-fix removes that gap entirely.
+
+Same pattern-matching as the historical repair (see below) — conservative
+enough to leave real responses untouched, including ones that start with bold
+emphasis. Applies to any `anthropic-messages` assistant message; no
+provider allowlist. Disable for a single run with `--m3fix-no-live` if needed.
+
+## Usage (historical/manual repair)
 
 ```text
 /m3fix [partial-session-id|session-file] [options]
@@ -67,7 +89,7 @@ Options:
 - `--no-unflatten` — skip text-to-thinking repair.
 - `--allow-empty-signature` — deprecated no-op (kept for backward compatibility). The repair now always runs for `anthropic-messages` models regardless of registry metadata.
 
-## Behavior
+## Behavior (`/m3fix` command)
 
 For assistant messages, `/m3fix` can:
 

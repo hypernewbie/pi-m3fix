@@ -3,8 +3,11 @@ import { parseCommandArgs } from "./args.ts";
 import { findSessionFiles } from "./session-find.ts";
 import { resolveTargetModel } from "./target-model.ts";
 import { repairSessionFile } from "./repair.ts";
+import { registerLiveFix } from "./live-fix.ts";
 
 export default function piM3FixExtension(pi: ExtensionAPI) {
+	registerLiveFix(pi);
+
 	pi.registerCommand("m3fix", {
 		description: "Repair flattened reasoning blocks in a Pi session JSONL file",
 		handler: async (args, ctx) => {

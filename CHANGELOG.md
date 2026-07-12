@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.0
+
+- **Added: live auto-fix.** pi-m3fix now hooks Pi's `message_end` event and
+  intercepts every assistant message the instant it's finalized, converting
+  M3's flattened-reasoning text blocks to `thinking` blocks before they are
+  ever written to the session file. No command invocation needed — it's
+  always on once the extension is loaded. This is the actual fix for the
+  fundamental limitation shared by `underp.py` and the manual `/m3fix`
+  command: both are one-shot repairs of whatever's already in the file, so
+  new leaks reappear on every subsequent M3 turn until you remember to
+  re-run them. The live hook removes that gap.
+- Added `--m3fix-no-live` flag to opt out of the live auto-fix for a run.
+- Leak-detection pattern (`isReasoningLeak`) extracted into a shared module
+  (`src/leak-pattern.ts`) used by both the live hook and the historical
+  `/m3fix` repair, so behavior can't drift between the two paths.
+- `/m3fix` (the manual command) is unchanged and still useful for repairing
+  session files recorded before this extension was installed, or for
+  relabeling `provider`/`api`/`model` on sessions from a renamed/changed
+  custom provider.
+
 ## 0.2.3
 
 - **Fix (critical):** bare `/m3fix --force-live` silently skipped the unflatten

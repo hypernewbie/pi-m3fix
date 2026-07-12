@@ -2,6 +2,7 @@ import { readFile, writeFile, rename } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { SessionManager, type SessionEntry, type SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import type { TargetModel } from "./target-model.ts";
+import { isReasoningLeak } from "./leak-pattern.ts";
 
 export interface RepairStats {
 	relabeled: number;
@@ -220,20 +221,4 @@ function transformAssistantEntry(
 	}
 
 	return changed;
-}
-
-/**
- * Detect M3's flattened reasoning: text that consists entirely of **bold phrase**
- * segments with no prose content. Real assistant responses have prose
- * between/after bold markers.
- *
- * Examples:
- *   "**Checking license metadata**"                        → true  (leak)
- *   "**Inspecting X**\n\n**Planning Y**"                      → true  (leak)
- *   "**Vibe: hard.** This is not a shallow port — it's..."    → false (real response)
- *   "Yes — there's a file in /path..."                        → false (real response)
- */
-function isReasoningLeak(text: string): boolean {
-	const stripped = text.replace(/\*\*.+?\*\*/g, "").trim();
-	return stripped.length === 0;
 }
