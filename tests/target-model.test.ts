@@ -35,16 +35,9 @@ describe("resolveTargetModel", () => {
 		expect(result?.compat.compatible).toBe(false);
 	});
 
-	it("requires proven compat.allowEmptySignature when relying on the current model with no explicit target", () => {
+	it("trusts the current model on anthropic-messages API without requiring registry compat metadata", () => {
 		const result = resolveTargetModel({
 			currentModel: model({ compat: undefined }),
-		});
-		expect(result?.compat.compatible).toBe(false);
-	});
-
-	it("allows the current model when compat.allowEmptySignature is explicitly true", () => {
-		const result = resolveTargetModel({
-			currentModel: model({ compat: { allowEmptySignature: true } }),
 		});
 		expect(result?.compat.compatible).toBe(true);
 	});

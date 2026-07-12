@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.3
+
+- **Fix (critical):** bare `/m3fix --force-live` silently skipped the unflatten
+  step entirely. The auto-detect compat path still required
+  `compat.allowEmptySignature === true` from the model registry, but Pi only
+  registers that flag for the `xiaomi` provider — not `minimax` or custom/proxy
+  providers. Result: m3fix relabeled and blanked signatures but never converted
+  leaked reasoning text to thinking blocks. underp.py (which has no compat gate)
+  worked; m3fix appeared dead. The registry check is now removed — any
+  `anthropic-messages` model is trusted (matching underp.py).
+- **Fix:** turns that already had a thinking block but ALSO had leaked bold-phrase
+  reasoning text (`[thinking, text:"**...**", toolCall]`) were skipped entirely by
+  the `!hasThinking` guard. M3 routinely emits both. The guard is removed and
+  replaced with **pattern-based leak detection**: a text block is only converted to
+  thinking if it consists entirely of `**bold phrase**` segments with no prose.
+  Real responses (e.g. `"**Vibe: hard.** This is not a shallow port..."`) are
+  preserved.
+- **Fix:** leaked reasoning in pre-compaction turns was left untouched because the
+  unflatten only ran on active-context entries. Pre-compaction turns are displayed
+  in the TUI but not sent to the LLM, so there is no signature risk — unflatten now
+  applies to all assistant turns except the last active one.
+- `--allow-empty-signature` flag is now a no-op (kept for backward compatibility).
+
 ## 0.2.2
 
 - First release published entirely through CI via OIDC trusted publishing

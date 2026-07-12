@@ -26,7 +26,6 @@ describe("repairSessionFile redacted handling", () => {
 	it("does not blank thinkingSignature on redacted thinking blocks", async () => {
 		const result = await repairSessionFile(WORK, {
 			target: { provider: "m3", api: "anthropic-messages", model: "MiniMax-M3" },
-			allowEmptySignature: true,
 		});
 
 		expect(result.stats.blanked).toBe(0);

@@ -21,7 +21,6 @@ export interface RepairOptions {
 	dryRun?: boolean;
 	noRelabel?: boolean;
 	noUnflatten?: boolean;
-	allowEmptySignature?: boolean;
 }
 
 export async function repairSessionFile(
@@ -29,11 +28,9 @@ export async function repairSessionFile(
 	options: RepairOptions,
 ): Promise<RepairResult> {
 	const sm = await SessionManager.open(sessionFile);
-	const activeIds = new Set<string>();
 	let lastActiveAssistantId: string | undefined;
 
 	for (const entry of buildActiveEntries(sm)) {
-		activeIds.add(entry.id);
 		if (entry.type === "message" && entry.message.role === "assistant") {
 			lastActiveAssistantId = entry.id;
 		}
@@ -57,7 +54,6 @@ export async function repairSessionFile(
 		if (entry.type === "message" && entry.message.role === "assistant") {
 			const wasChanged = transformAssistantEntry(
 				entry as SessionMessageEntry,
-				activeIds,
 				lastActiveAssistantId,
 				options,
 				stats,
@@ -147,7 +143,6 @@ function buildActiveEntries(sm: SessionManager): SessionEntry[] {
 
 function transformAssistantEntry(
 	entry: SessionMessageEntry,
-	activeIds: Set<string>,
 	lastActiveAssistantId: string | undefined,
 	options: RepairOptions,
 	stats: RepairStats,
@@ -187,22 +182,24 @@ function transformAssistantEntry(
 		}
 	}
 
-	const isActive = activeIds.has(entry.id);
 	const isLastActiveAssistant = entry.id === lastActiveAssistantId;
-	const hasThinking = content.some((block) => block.type === "thinking");
 
-	if (
-		isActive &&
-		!isLastActiveAssistant &&
-		!options.noUnflatten &&
-		options.allowEmptySignature &&
-		!hasThinking
-	) {
+	// Unflatten leaked reasoning in ALL assistant turns except the last active one.
+	// Pre-compaction / branched-off turns are not sent to the LLM, so there is no
+	// signature risk — but they ARE displayed in the TUI, so cleaning them up
+	// matters for readability. Pattern detection (isReasoningLeak) ensures real
+	// response text is never touched.
+	if (!isLastActiveAssistant && !options.noUnflatten) {
 		const newContent: Array<Record<string, unknown>> = [];
 		let convertedThisTurn = false;
 
 		for (const block of content) {
-			if (block.type === "text" && typeof block.text === "string" && block.text.trim().length > 0) {
+			if (
+				block.type === "text" &&
+				typeof block.text === "string" &&
+				block.text.trim().length > 0 &&
+				isReasoningLeak(block.text)
+			) {
 				newContent.push({
 					type: "thinking",
 					thinking: block.text,
@@ -223,4 +220,20 @@ function transformAssistantEntry(
 	}
 
 	return changed;
+}
+
+/**
+ * Detect M3's flattened reasoning: text that consists entirely of **bold phrase**
+ * segments with no prose content. Real assistant responses have prose
+ * between/after bold markers.
+ *
+ * Examples:
+ *   "**Checking license metadata**"                        → true  (leak)
+ *   "**Inspecting X**\n\n**Planning Y**"                      → true  (leak)
+ *   "**Vibe: hard.** This is not a shallow port — it's..."    → false (real response)
+ *   "Yes — there's a file in /path..."                        → false (real response)
+ */
+function isReasoningLeak(text: string): boolean {
+	const stripped = text.replace(/\*\*.+?\*\*/g, "").trim();
+	return stripped.length === 0;
 }

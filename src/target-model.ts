@@ -118,16 +118,14 @@ function checkModelCompat(model: Model<any>): CompatibilityResult {
 		};
 	}
 
-	const compat = (model.compat ?? {}) as { allowEmptySignature?: boolean };
-	if (compat.allowEmptySignature !== true) {
-		return {
-			compatible: false,
-			reason: `Current model ${model.provider}/${model.id} does not have compat.allowEmptySignature=true. Pass --allow-empty-signature to force the repair anyway.`,
-		};
-	}
-
+	// M3 and similar proxy-backed models tolerate empty thinking signatures even
+	// when their registry compat metadata doesn't explicitly say so. Requiring
+	// compat.allowEmptySignature here was the root cause of m3fix silently
+	// skipping the unflatten step for custom/proxy providers — the exact
+	// providers that need this repair the most. Trust the API type and let the
+	// user opt out with --no-unflatten if needed.
 	return {
 		compatible: true,
-		reason: `Current model ${model.provider}/${model.id} supports empty thinking signatures.`,
+		reason: `Current model ${model.provider}/${model.id} uses anthropic-messages API.`,
 	};
 }

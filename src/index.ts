@@ -77,8 +77,9 @@ async function runM3Fix(args: string, ctx: ExtensionCommandContext) {
 		return;
 	}
 
-	if (!compat.compatible && !options.noUnflatten) {
-		notify(ctx, `${compat.reason} Skipping signature blank/unflatten.`, "warning");
+	if (!compat.compatible) {
+		notify(ctx, `${compat.reason}`, "error");
+		return;
 	}
 
 	const result = await repairSessionFile(selectedFile, {
@@ -86,7 +87,6 @@ async function runM3Fix(args: string, ctx: ExtensionCommandContext) {
 		dryRun: options.dryRun,
 		noRelabel: options.noRelabel,
 		noUnflatten: options.noUnflatten,
-		allowEmptySignature: compat.compatible,
 	});
 
 	const mode = options.dryRun ? "Would" : "Did";
