@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1
+
+- **Retracts `0.3.0`.** It added a `message_end` hook that live-patched every
+  assistant message on the `anthropic-messages` API — unasked for, unreviewed
+  scope creep with real unexamined implications (runs on every message end,
+  for every provider, changes what gets persisted without the user seeing it
+  first). Reverted in full. This release's actual behavior is byte-for-byte
+  the same repair as 0.2.3 — the version number is 0.3.1 (not 0.2.4) only
+  because npm requires a version higher than the already-published 0.3.0 to
+  become `latest` again. `pi-m3fix@0.3.0` is deprecated on npm; do not
+  install it.
+
 ## 0.2.3
 
 - **Fix (critical):** bare `/m3fix --force-live` silently skipped the unflatten
