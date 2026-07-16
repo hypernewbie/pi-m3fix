@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+- **Fix (critical):** removed the `api === "anthropic-messages"` gate entirely.
+  `/m3fix` previously refused to do anything at all — no relabel, no blank, no
+  unflatten — unless the target's API was exactly `anthropic-messages`. If M3
+  is proxied over `openai-completions`/`openai-responses`/anything else, this
+  was a full no-op. `thinkingSignature` is a generic Pi concept (documented as
+  doubling for the OpenAI Responses reasoning-item id) and the leak pattern is
+  pure text matching — there was never a real reason for the gate.
+- **Fix:** signature blanking and redacted-thinking neutralization now only
+  apply to messages actually being relabeled away from a different provider.
+  Previously blanking ran unconditionally on every thinking block. Verified
+  against `openai-responses-shared.ts`: an empty/falsy `thinkingSignature`
+  makes Pi silently drop the entire thinking block from context on replay (no
+  text fallback — it just disappears). Running `/m3fix` on an
+  already-correct, native M3 session would have destroyed valid working
+  content. Now a guaranteed no-op for signatures already belonging to the
+  target provider.
+- **Added:** foreign `redacted` thinking blocks (a safety-redaction mechanism
+  most providers besides Anthropic don't understand) are neutralized into
+  empty thinking blocks when the message is being relabeled away from a
+  different provider — prevents Pi from replaying an uninterpretable opaque
+  payload to M3 and risking a hard API rejection.
+- Verified the relabel+blank+neutralize approach against Pi's own source:
+  `google-shared.ts` and `openai-completions.ts` (`requiresThinkingAsText`
+  models) both explicitly downgrade cross-provider thinking blocks to plain
+  text, commented "to avoid model mimicking them". `anthropic-messages.ts` —
+  M3's own API in Pi's built-in provider config — has no equivalent
+  same-provider check at all. This repair replicates, for M3, protection Pi
+  already gives other providers natively.
+
 ## 0.3.1
 
 - **Retracts `0.3.0`.** It added a `message_end` hook that live-patched every

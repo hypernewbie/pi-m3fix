@@ -57,7 +57,6 @@ async function runM3Fix(args: string, ctx: ExtensionCommandContext) {
 	const resolved = resolveTargetModel({
 		currentModel: ctx.model,
 		explicit: options.target,
-		forceAllowEmptySignature: options.allowEmptySignature,
 	});
 
 	if (!resolved) {
@@ -65,7 +64,7 @@ async function runM3Fix(args: string, ctx: ExtensionCommandContext) {
 		return;
 	}
 
-	const { target, compat } = resolved;
+	const { target } = resolved;
 
 	// Safety: refuse to modify the currently loaded session unless forced
 	if (selectedFile === currentSessionFile && !options.forceLive) {
@@ -74,11 +73,6 @@ async function runM3Fix(args: string, ctx: ExtensionCommandContext) {
 			"Refusing to modify the currently loaded session file. Use --force-live, or /quit and run again.",
 			"error",
 		);
-		return;
-	}
-
-	if (!compat.compatible) {
-		notify(ctx, `${compat.reason}`, "error");
 		return;
 	}
 
@@ -92,7 +86,7 @@ async function runM3Fix(args: string, ctx: ExtensionCommandContext) {
 	const mode = options.dryRun ? "Would" : "Did";
 	notify(
 		ctx,
-		`${mode} relabel ${result.stats.relabeled}, blank ${result.stats.blanked}, unflatten ${result.stats.unflattened} blocks (${result.stats.activeAssistantTurns} turns).`,
+		`${mode} relabel ${result.stats.relabeled}, blank ${result.stats.blanked}, unflatten ${result.stats.unflattened} blocks, neutralize ${result.stats.neutralizedRedacted} foreign-redacted blocks (${result.stats.activeAssistantTurns} turns).`,
 		result.changed ? "info" : "warning",
 	);
 

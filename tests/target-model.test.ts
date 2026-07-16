@@ -1,52 +1,55 @@
 import { describe, it, expect } from "vitest";
 import { resolveTargetModel } from "../src/target-model.ts";
 
-function model(overrides: Partial<{ provider: string; api: string; id: string; compat: any }> = {}) {
+function model(overrides: Partial<{ provider: string; api: string; id: string }> = {}) {
 	return {
-		provider: "m3",
+		provider: "minimax",
 		api: "anthropic-messages",
 		id: "MiniMax-M3",
-		compat: undefined,
 		...overrides,
 	} as any;
 }
 
 describe("resolveTargetModel", () => {
-	it("trusts an explicit target even when compat metadata is unknown (underp.py parity)", () => {
+	it("resolves an explicit target with no current model", () => {
 		const result = resolveTargetModel({
 			currentModel: undefined,
-			explicit: { provider: "m3", api: "anthropic-messages", model: "MiniMax-M3" },
+			explicit: { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" },
 		});
-		expect(result?.compat.compatible).toBe(true);
+		expect(result?.source).toBe("explicit");
+		expect(result?.target).toEqual({ provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" });
 	});
 
-	it("trusts an explicit target that exactly matches the current model even without compat metadata", () => {
+	it("resolves an explicit target on a non-anthropic-messages API (openai-completions, openai-responses, etc.)", () => {
+		// No API gate: M3 can be proxied through any API. The leak-pattern
+		// unflatten and signature blanking are API-agnostic (see repair.ts).
 		const result = resolveTargetModel({
-			currentModel: model({ compat: undefined }),
-			explicit: { provider: "m3", api: "anthropic-messages", model: "MiniMax-M3" },
+			explicit: { provider: "minimax", api: "openai-completions", model: "MiniMax-M3" },
 		});
-		expect(result?.compat.compatible).toBe(true);
+		expect(result?.target.api).toBe("openai-completions");
 	});
 
-	it("refuses an explicit non-anthropic-messages target", () => {
+	it("fills in unspecified explicit fields from the current model", () => {
 		const result = resolveTargetModel({
-			explicit: { provider: "openai", api: "openai-completions", model: "gpt-5" },
+			currentModel: model(),
+			explicit: { provider: "minimax" },
 		});
-		expect(result?.compat.compatible).toBe(false);
+		expect(result?.target).toEqual({ provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" });
 	});
 
-	it("trusts the current model on anthropic-messages API without requiring registry compat metadata", () => {
-		const result = resolveTargetModel({
-			currentModel: model({ compat: undefined }),
-		});
-		expect(result?.compat.compatible).toBe(true);
+	it("resolves the current model when no explicit target is given", () => {
+		const result = resolveTargetModel({ currentModel: model({ api: "openai-responses" }) });
+		expect(result?.source).toBe("current");
+		expect(result?.target).toEqual({ provider: "minimax", api: "openai-responses", model: "MiniMax-M3" });
 	});
 
-	it("--allow-empty-signature forces compatibility regardless of registry metadata", () => {
-		const result = resolveTargetModel({
-			currentModel: model({ compat: undefined }),
-			forceAllowEmptySignature: true,
-		});
-		expect(result?.compat.compatible).toBe(true);
+	it("returns undefined when nothing can be resolved", () => {
+		const result = resolveTargetModel({});
+		expect(result).toBeUndefined();
+	});
+
+	it("returns undefined when explicit target is missing required fields and there's no current model to fill them in", () => {
+		const result = resolveTargetModel({ explicit: { provider: "minimax" } });
+		expect(result).toBeUndefined();
 	});
 });

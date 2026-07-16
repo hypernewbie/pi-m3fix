@@ -23,15 +23,51 @@ describe("repairSessionFile redacted handling", () => {
 		if (existsSync(`${WORK}.bak2`)) await rm(`${WORK}.bak2`);
 	});
 
-	it("does not blank thinkingSignature on redacted thinking blocks", async () => {
+	it("neutralizes a foreign redacted thinking block when relabeling from a different provider", async () => {
+		// This redacted block's opaque payload belonged to "old" provider.
+		// Replaying it verbatim to the target (m3/anthropic-messages) risks a
+		// hard API rejection since m3 has no way to interpret someone else's
+		// safety-redacted content. It must be neutralized, not forwarded as-is.
 		const result = await repairSessionFile(WORK, {
 			target: { provider: "m3", api: "anthropic-messages", model: "MiniMax-M3" },
 		});
 
-		expect(result.stats.blanked).toBe(0);
+		expect(result.stats.neutralizedRedacted).toBe(1);
+		expect(result.stats.blanked).toBe(0); // redacted blocks never go through the normal blank path
 
 		const lines = await loadLines(WORK);
-		const assistant = lines.find((e) => e.id === "00000002");
-		expect(assistant.message.content[0].thinkingSignature).toBe("stale-signature");
+		const foreign = lines.find((e) => e.id === "00000002");
+		expect(foreign.message.content[0].redacted).toBeUndefined();
+		expect(foreign.message.content[0].thinkingSignature).toBe("");
+		expect(foreign.message.content[0].thinking).toBe("");
+	});
+
+	it("leaves an already-native redacted thinking block untouched", async () => {
+		// This message already belongs to the target provider - its redacted
+		// block is presumed native and is left exactly as-is.
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "m3", api: "anthropic-messages", model: "MiniMax-M3" },
+		});
+
+		expect(result.stats.neutralizedRedacted).toBe(1); // only the foreign one (00000002)
+
+		const lines = await loadLines(WORK);
+		const native = lines.find((e) => e.id === "00000004");
+		expect(native.message.content[0].redacted).toBe(true);
+		expect(native.message.content[0].thinkingSignature).toBe("native-opaque-blob");
+		expect(native.message.content[0].thinking).toBe("opaque-native");
+	});
+
+	it("does not neutralize redacted blocks when --no-relabel is passed", async () => {
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "m3", api: "anthropic-messages", model: "MiniMax-M3" },
+			noRelabel: true,
+		});
+
+		expect(result.stats.neutralizedRedacted).toBe(0);
+		const lines = await loadLines(WORK);
+		const foreign = lines.find((e) => e.id === "00000002");
+		expect(foreign.message.content[0].redacted).toBe(true);
+		expect(foreign.message.content[0].thinkingSignature).toBe("stale-signature");
 	});
 });

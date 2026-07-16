@@ -5,6 +5,15 @@
 
 Pi extension for repairing session files affected by flattened reasoning blocks.
 
+**"M3" in this name/doc refers to whatever model is currently exhibiting this
+behavior in your session — not a hardcoded requirement.** The tool has zero
+dependency on any specific provider or model name. With no explicit target,
+`/m3fix` resolves to `ctx.model` (Pi's currently selected model), whatever
+that is: a built-in provider, or a fully custom one you registered yourself
+under any name, doesn't matter. Whatever is currently selected becomes the target
+that the whole session gets synced to. `--provider`/`--api`/`--model` override
+it explicitly if you need to target something other than the current model.
+
 ## Install
 
 From npm (recommended, versioned):
@@ -16,7 +25,7 @@ pi install npm:pi-m3fix
 Pin to a specific version:
 
 ```bash
-pi install npm:pi-m3fix@0.2.2
+pi install npm:pi-m3fix@0.3.1
 ```
 
 From GitHub, latest `main`:
@@ -28,7 +37,7 @@ pi install git:github.com/hypernewbie/pi-m3fix
 From GitHub, pinned to a released tag:
 
 ```bash
-pi install git:github.com/hypernewbie/pi-m3fix@v0.2.2
+pi install git:github.com/hypernewbie/pi-m3fix@v0.3.1
 ```
 
 `v0.1.0` was broken (see [CHANGELOG.md](CHANGELOG.md)) and has been removed. Do not install it.
@@ -72,8 +81,19 @@ Options:
 For assistant messages, `/m3fix` can:
 
 1. Set `provider`, `api`, and `model` to the selected target model.
-2. Clear stale `thinkingSignature` values on non-redacted thinking blocks.
-3. Convert leaked-reasoning text blocks back into thinking blocks.
+2. Clear stale `thinkingSignature` values — but only on messages actually being
+   relabeled away from a different provider. A signature on a message that
+   already belongs to the target provider is left completely untouched.
+3. Neutralize foreign `redacted` thinking blocks — same rule: only when the
+   message is being relabeled away from a different provider.
+4. Convert leaked-reasoning text blocks back into thinking blocks.
+
+All four operations work for **any API** (`anthropic-messages`,
+`openai-completions`, `openai-responses`, etc.) — there is no API allowlist.
+M3 can be proxied through any of them, and none of these repairs are
+Anthropic-specific: `thinkingSignature` is a generic Pi concept (for
+OpenAI Responses it holds a JSON-encoded reasoning-item id, not a signature),
+and the leak-pattern match is pure text matching.
 
 Leaked-reasoning detection uses **pattern matching**: a text block is only
 converted to thinking if it consists entirely of `**bold phrase**` segments with
@@ -81,17 +101,12 @@ no prose content. This matches M3's flattened reasoning output
 (`"**Checking license metadata**"`, `"**Planning X**\n\n**Doing Y**"`) while
 preserving real responses that happen to start with bold
 (`"**Vibe: hard.** This is not a shallow port..."` → kept as text).
-
-Signature clearing and text-to-thinking repair run for any `anthropic-messages`
-model — the same behavior as the original `underp.py` script. No registry compat
-metadata is required. Use `--no-unflatten` to skip the text-to-thinking step.
+Use `--no-unflatten` to skip this step.
 
 Unflatten applies to **all** assistant turns except the last active one.
 Pre-compaction turns are included because they are displayed in the TUI (even
 though they aren't sent to the LLM), and leaving leaked reasoning visible is the
 exact problem this tool solves.
-
-Redacted thinking blocks are never modified.
 
 ## Safety
 

@@ -7,6 +7,7 @@ export interface RepairStats {
 	relabeled: number;
 	blanked: number;
 	unflattened: number;
+	neutralizedRedacted: number;
 	activeAssistantTurns: number;
 }
 
@@ -42,6 +43,7 @@ export async function repairSessionFile(
 		relabeled: 0,
 		blanked: 0,
 		unflattened: 0,
+		neutralizedRedacted: 0,
 		activeAssistantTurns: 0,
 	};
 
@@ -150,6 +152,8 @@ function transformAssistantEntry(
 	let changed = false;
 	const message = entry.message as unknown as Record<string, unknown>;
 	const content = Array.isArray(message.content) ? (message.content as Array<Record<string, unknown>>) : [];
+	const originalProvider = message.provider;
+	const wasFromDifferentProvider = originalProvider !== options.target.provider;
 
 	if (!options.noRelabel) {
 		if (message.provider !== options.target.provider) {
@@ -172,9 +176,42 @@ function transformAssistantEntry(
 	for (const block of content) {
 		if (block.type === "thinking") {
 			if (block.redacted === true) {
+				// Redacted thinking is an opaque, provider-specific safety-redaction
+				// payload (Pi's schema stores it in thinkingSignature, replayed
+				// verbatim as-is to whatever API the message is now labeled under).
+				// If this message used to belong to a different provider, that
+				// payload is foreign: the target model has no way to interpret it,
+				// and some backends reject a redacted_thinking block they don't
+				// recognize outright, breaking the whole API call. We can't recover
+				// the real (encrypted) content, so neutralize it into an empty
+				// thinking block - Pi's own request serialization already drops
+				// thinking blocks with empty thinking text AND empty signature, so
+				// this cleanly disappears from context instead of risking an error.
+				if (wasFromDifferentProvider && !options.noRelabel) {
+					delete block.redacted;
+					block.thinking = "";
+					block.thinkingSignature = "";
+					stats.neutralizedRedacted++;
+					changed = true;
+				}
 				continue;
 			}
-			if (block.thinkingSignature !== "" && block.thinkingSignature !== undefined) {
+			// Only blank a signature when the message is actually being relabeled
+			// away from a different provider - i.e. the signature is genuinely
+			// stale (belongs to a provider this message no longer claims to be
+			// from). Blanking an ALREADY-native signature is actively harmful, not
+			// neutral: for openai-responses, thinkingSignature holds a real JSON
+			// reasoning-item payload, and a falsy/empty signature causes Pi to
+			// silently drop the entire thinking block from context on the next
+			// call (no fallback to text - it just disappears). Running /m3fix on
+			// an already-correct, native M3 session must not destroy working
+			// content like that.
+			if (
+				wasFromDifferentProvider &&
+				!options.noRelabel &&
+				block.thinkingSignature !== "" &&
+				block.thinkingSignature !== undefined
+			) {
 				block.thinkingSignature = "";
 				stats.blanked++;
 				changed = true;
@@ -189,6 +226,16 @@ function transformAssistantEntry(
 	// signature risk — but they ARE displayed in the TUI, so cleaning them up
 	// matters for readability. Pattern detection (isReasoningLeak) ensures real
 	// response text is never touched.
+	//
+	// New thinking blocks synthesized here always get thinkingSignature: ""
+	// (empty string, never anything else). This is deliberate and must not
+	// change: for openai-responses, thinkingSignature holds a real JSON-encoded
+	// reasoning-item object, and Pi's serializer does `JSON.parse(signature)`
+	// whenever the signature is truthy. An empty string is falsy, so the block
+	// is cleanly skipped (dropped from that turn's outbound context, no crash).
+	// Putting anything non-empty but non-JSON here (e.g. a placeholder string)
+	// would make Pi's JSON.parse throw and break the entire API call the next
+	// time this turn is replayed - strictly worse than the original leak.
 	if (!isLastActiveAssistant && !options.noUnflatten) {
 		const newContent: Array<Record<string, unknown>> = [];
 		let convertedThisTurn = false;
