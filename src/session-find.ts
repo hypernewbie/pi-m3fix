@@ -5,6 +5,8 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 export interface SessionFindOptions {
 	query?: string;
 	currentSessionFile?: string;
+	/** Override the sessions root directory searched for partial-match queries. Test-only hook; defaults to Pi's real sessions directory. */
+	sessionsRoot?: string;
 }
 
 export interface SessionFindResult {
@@ -33,7 +35,7 @@ export async function findSessionFiles(options: SessionFindOptions): Promise<Ses
 	}
 
 	// Search by partial UUID / filename across all sessions
-	const sessions = await SessionManager.listAll();
+	const sessions = await SessionManager.listAll(options.sessionsRoot);
 	const query = options.query.toLowerCase();
 
 	return sessions

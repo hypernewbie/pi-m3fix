@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Test coverage: 68.85% → 100% statements/lines/functions, 63.48% → 99.43%
+  branches. Added dedicated coverage for `index.ts` (command orchestration:
+  no-match, multi-match select/cancel/no-UI, live-session refusal, dry-run,
+  force-live reload, switchSession cancellation, non-Error throws) and
+  `session-find.ts` (0% → 100%: current-session fallback, absolute-path
+  match, partial-id/filename/name search, ambiguous matches), plus edge
+  cases in `args.ts` (quoting, missing flag values, too many positionals)
+  and `repair.ts` (empty session file, pre-existing backup preservation,
+  missing/non-array message content). `session-find.ts` gained an optional
+  `sessionsRoot` field (test-only hook, defaults to Pi's real sessions
+  directory) to make partial-match search testable without touching
+  `~/.pi/agent/sessions`.
+
 ## 0.4.0
 
 - **Fix (critical):** removed the `api === "anthropic-messages"` gate entirely.

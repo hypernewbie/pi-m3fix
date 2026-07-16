@@ -27,4 +27,53 @@ describe("parseCommandArgs", () => {
 	it("rejects unknown flags", () => {
 		expect(() => parseCommandArgs("--wat")).toThrow("Unknown flag");
 	});
+
+	it("parses --no-unflatten and --allow-empty-signature", () => {
+		const result = parseCommandArgs("--no-unflatten --allow-empty-signature");
+		expect(result.noUnflatten).toBe(true);
+		expect(result.allowEmptySignature).toBe(true);
+	});
+
+	it("parses target overrides individually", () => {
+		expect(parseCommandArgs("--provider m3").target).toEqual({ provider: "m3" });
+		expect(parseCommandArgs("--api anthropic-messages").target).toEqual({ api: "anthropic-messages" });
+		expect(parseCommandArgs("--model MiniMax-M3").target).toEqual({ model: "MiniMax-M3" });
+	});
+
+	it("rejects a target flag with a missing value", () => {
+		expect(() => parseCommandArgs("--provider")).toThrow("Missing value for --provider");
+		expect(() => parseCommandArgs("--api")).toThrow("Missing value for --api");
+		expect(() => parseCommandArgs("--model")).toThrow("Missing value for --model");
+	});
+
+	it("rejects more than one positional argument", () => {
+		expect(() => parseCommandArgs("abc123 def456")).toThrow(
+			"Expected at most one positional argument (session UUID or path)",
+		);
+	});
+
+	it("handles no positional argument at all", () => {
+		const result = parseCommandArgs("--dry-run");
+		expect(result.query).toBeUndefined();
+	});
+
+	it("parses double-quoted and single-quoted tokens, including embedded spaces", () => {
+		const result = parseCommandArgs(`--provider "my custom provider" --model 'my custom model'`);
+		expect(result.target).toEqual({
+			provider: "my custom provider",
+			model: "my custom model",
+		});
+	});
+
+	it("handles empty input", () => {
+		const result = parseCommandArgs("");
+		expect(result.query).toBeUndefined();
+		expect(result.target).toBeUndefined();
+	});
+
+	it("handles extra whitespace between tokens", () => {
+		const result = parseCommandArgs("  --dry-run    abc123  ");
+		expect(result.dryRun).toBe(true);
+		expect(result.query).toBe("abc123");
+	});
 });

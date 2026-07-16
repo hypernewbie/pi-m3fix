@@ -52,4 +52,25 @@ describe("resolveTargetModel", () => {
 		const result = resolveTargetModel({ explicit: { provider: "minimax" } });
 		expect(result).toBeUndefined();
 	});
+
+	it("fills in provider and model from the current model when only api is given explicitly", () => {
+		const result = resolveTargetModel({
+			currentModel: model({ provider: "minimax", model: undefined as any }),
+			explicit: { api: "openai-completions" },
+		});
+		expect(result?.target).toEqual({ provider: "minimax", api: "openai-completions", model: "MiniMax-M3" });
+	});
+
+	it("fills in provider and api from the current model when only model is given explicitly", () => {
+		const result = resolveTargetModel({
+			currentModel: model(),
+			explicit: { model: "MiniMax-M3-turbo" },
+		});
+		expect(result?.target).toEqual({ provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3-turbo" });
+	});
+
+	it("returns undefined when an explicit field is given but the current model can't fill the rest", () => {
+		const result = resolveTargetModel({ explicit: { api: "anthropic-messages" } });
+		expect(result).toBeUndefined();
+	});
 });

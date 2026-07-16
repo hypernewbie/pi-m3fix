@@ -141,6 +141,67 @@ describe("repairSessionFile", () => {
 		expect(native.message.content[0].thinkingSignature).toBe('{"id":"rs_native_123"}');
 	});
 
+	it("handles an empty (header-only) session file without crashing", async () => {
+		// No entries at all -> getLeafId() is null -> buildActiveEntries must fall
+		// back gracefully to an empty active set instead of crashing.
+		await writeFile(
+			WORK,
+			'{"type":"session","version":3,"id":"empty-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}\n',
+			"utf8",
+		);
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "m3", api: "anthropic-messages", model: "MiniMax-M3" },
+		});
+
+		expect(result.changed).toBe(false);
+		expect(result.stats).toEqual({
+			relabeled: 0,
+			blanked: 0,
+			unflattened: 0,
+			neutralizedRedacted: 0,
+			activeAssistantTurns: 0,
+		});
+	});
+
+	it("preserves a pre-existing .bak2 instead of overwriting it", async () => {
+		// The FIRST repair creates the backup. A subsequent repair (e.g. after
+		// more leaked turns accumulate) must not clobber that original backup.
+		await writeFile(`${WORK}.bak2`, "original untouched backup content\n", "utf8");
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "m3", api: "anthropic-messages", model: "MiniMax-M3" },
+		});
+
+		expect(result.changed).toBe(true);
+		const backupContent = await readFile(`${WORK}.bak2`, "utf8");
+		expect(backupContent).toBe("original untouched backup content\n");
+	});
+
+	it("handles an assistant message with missing/non-array content without crashing", async () => {
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"no-content-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"hi"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","provider":"old","api":"old","model":"old","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "m3", api: "anthropic-messages", model: "MiniMax-M3" },
+		});
+
+		expect(result.changed).toBe(true); // still relabeled
+		expect(result.stats.relabeled).toBe(1);
+		expect(result.stats.unflattened).toBe(0);
+
+		const lines = await loadLines(WORK);
+		const entry = lines.find((e) => e.id === "2");
+		expect(entry.message.provider).toBe("m3");
+	});
+
 	it("dry-run does not write", async () => {
 		const before = await readFile(WORK, "utf8");
 		const result = await repairSessionFile(WORK, {
