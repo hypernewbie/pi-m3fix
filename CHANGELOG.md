@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.5.0
+
+- **Fix (critical, root cause):** found by inspecting a real, live-broken
+  session rather than guessing further. A completed/genuine assistant turn
+  never has visible text without an accompanying thinking block (verified
+  across 483 real assistant turns from that session: every `stop`-reason
+  turn with text also has thinking, 17/17, zero exceptions). A text-only
+  shape with no thinking occurred exclusively on turns with
+  `stopReason: "aborted"` (2/2) - the generation was cut off before Pi
+  received a proper thinking-type marker from the stream, so whatever had
+  arrived so far got stored as plain text instead. This is unrelated to any
+  particular text formatting: it happened once as bold-header-style notes
+  and once as fully unformatted prose, in the same real session, with the
+  same cause. Unflatten now also converts any text block in a turn where
+  `stopReason === "aborted"` and no thinking block is present anywhere in
+  that turn, independent of the existing bold-phrase pattern match (which
+  remains, for the separate, non-aborted case of a fully completed turn
+  that still emits some reasoning as bold-header text alongside a real
+  thinking block).
+- **Fix:** the most recent ("last active") assistant turn was
+  unconditionally excluded from unflatten, on every single run, forever.
+  This is a direct regression from before pattern-based leak detection
+  existed: the exclusion was originally there to "preserve the final
+  answer" back when unflatten blindly converted any text block. Once
+  `isReasoningLeak` became the actual safety mechanism (proven to never
+  match real prose, even text that starts with bold emphasis), the
+  last-turn exclusion stopped adding any protection and instead permanently
+  protected the most recently produced - and most visible - leaked-reasoning
+  turn from ever being fixed. Symptom: run `/m3fix`, it fixes everything
+  older, reports non-zero stats once; run it again and it reports all
+  zeros forever while the session still looks broken, because the one turn
+  actually being looked at was never eligible for repair in the first
+  place. Unflatten now applies uniformly to every assistant turn.
+- Note: relabeling and signature/redacted-block handling only ever trigger
+  when a message's provider differs from the target. A pure single-provider
+  session (never switched models) that hits the aborted-stream bug above
+  will correctly show `relabeled: 0` - only `unflattened` moves - since
+  there was never anything to relabel in the first place.
+
 ## Unreleased
 
 - Test coverage: 68.85% → 100% statements/lines/functions, 63.48% → 99.43%

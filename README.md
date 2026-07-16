@@ -25,7 +25,7 @@ pi install npm:pi-m3fix
 Pin to a specific version:
 
 ```bash
-pi install npm:pi-m3fix@0.3.1
+pi install npm:pi-m3fix@0.5.0
 ```
 
 From GitHub, latest `main`:
@@ -37,7 +37,7 @@ pi install git:github.com/hypernewbie/pi-m3fix
 From GitHub, pinned to a released tag:
 
 ```bash
-pi install git:github.com/hypernewbie/pi-m3fix@v0.3.1
+pi install git:github.com/hypernewbie/pi-m3fix@v0.5.0
 ```
 
 `v0.1.0` was broken (see [CHANGELOG.md](CHANGELOG.md)) and has been removed. Do not install it.

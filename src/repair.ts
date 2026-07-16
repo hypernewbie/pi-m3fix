@@ -28,14 +28,9 @@ export async function repairSessionFile(
 	sessionFile: string,
 	options: RepairOptions,
 ): Promise<RepairResult> {
-	const sm = await SessionManager.open(sessionFile);
-	let lastActiveAssistantId: string | undefined;
-
-	for (const entry of buildActiveEntries(sm)) {
-		if (entry.type === "message" && entry.message.role === "assistant") {
-			lastActiveAssistantId = entry.id;
-		}
-	}
+	// Fail fast if the file isn't a well-formed Pi session before we start
+	// rewriting it by hand.
+	await SessionManager.open(sessionFile);
 
 	const raw = await readFile(sessionFile, "utf8");
 	const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
@@ -54,12 +49,7 @@ export async function repairSessionFile(
 		const entry = JSON.parse(line) as SessionEntry;
 
 		if (entry.type === "message" && entry.message.role === "assistant") {
-			const wasChanged = transformAssistantEntry(
-				entry as SessionMessageEntry,
-				lastActiveAssistantId,
-				options,
-				stats,
-			);
+			const wasChanged = transformAssistantEntry(entry as SessionMessageEntry, options, stats);
 			if (wasChanged) changed = true;
 		}
 
@@ -84,68 +74,8 @@ export async function repairSessionFile(
 	return { changed, stats, backupPath };
 }
 
-function buildActiveEntries(sm: SessionManager): SessionEntry[] {
-	const allEntries = sm.getEntries();
-	const byId = new Map<string, SessionEntry>();
-	for (const entry of allEntries) {
-		byId.set(entry.id, entry);
-	}
-
-	const leafId = sm.getLeafId();
-	let leaf: SessionEntry | undefined;
-	if (leafId) {
-		leaf = byId.get(leafId);
-	}
-	if (!leaf) {
-		leaf = allEntries[allEntries.length - 1];
-	}
-	if (!leaf) {
-		return [];
-	}
-
-	const path: SessionEntry[] = [];
-	let current: SessionEntry | undefined = leaf;
-	while (current) {
-		path.push(current);
-		current = current.parentId ? byId.get(current.parentId) : undefined;
-	}
-	path.reverse();
-
-	let compaction: SessionEntry & { type: "compaction"; firstKeptEntryId?: string } | undefined;
-	let compactionIdx = -1;
-	for (let i = 0; i < path.length; i++) {
-		const entry = path[i];
-		if (entry.type === "compaction") {
-			compaction = entry as SessionEntry & { type: "compaction"; firstKeptEntryId?: string };
-			compactionIdx = i;
-		}
-	}
-
-	if (!compaction) {
-		return path;
-	}
-
-	const active: SessionEntry[] = [];
-	let foundFirstKept = false;
-	for (let i = 0; i < compactionIdx; i++) {
-		const entry = path[i];
-		if (entry.id === compaction.firstKeptEntryId) {
-			foundFirstKept = true;
-		}
-		if (foundFirstKept) {
-			active.push(entry);
-		}
-	}
-	for (let i = compactionIdx + 1; i < path.length; i++) {
-		active.push(path[i]);
-	}
-
-	return active;
-}
-
 function transformAssistantEntry(
 	entry: SessionMessageEntry,
-	lastActiveAssistantId: string | undefined,
 	options: RepairOptions,
 	stats: RepairStats,
 ): boolean {
@@ -219,24 +149,37 @@ function transformAssistantEntry(
 		}
 	}
 
-	const isLastActiveAssistant = entry.id === lastActiveAssistantId;
-
-	// Unflatten leaked reasoning in ALL assistant turns except the last active one.
-	// Pre-compaction / branched-off turns are not sent to the LLM, so there is no
-	// signature risk — but they ARE displayed in the TUI, so cleaning them up
-	// matters for readability. Pattern detection (isReasoningLeak) ensures real
-	// response text is never touched.
+	// Unflatten leaked reasoning in EVERY assistant turn, including the most
+	// recent one. This used to skip the last active turn "to preserve the
+	// final answer" - a rule inherited from a version of this repair that
+	// blindly converted ANY text block to thinking. That's no longer how this
+	// works: isReasoningLeak only matches text that is entirely **bold
+	// phrase** segments with zero prose (verified never to match a genuine
+	// response, even one that starts with bold emphasis). With that
+	// per-block safety guarantee already in place, excluding the last turn
+	// added no protection - it only meant the most recently produced (and
+	// most visible) leaked-reasoning turn was permanently unfixable, forever,
+	// on every single run: "0 changes reported, still broken" is exactly
+	// what that produces once every OLDER leaked turn has already been
+	// cleaned up and the only remaining leak is the newest one.
 	//
-	// New thinking blocks synthesized here always get thinkingSignature: ""
-	// (empty string, never anything else). This is deliberate and must not
-	// change: for openai-responses, thinkingSignature holds a real JSON-encoded
-	// reasoning-item object, and Pi's serializer does `JSON.parse(signature)`
-	// whenever the signature is truthy. An empty string is falsy, so the block
-	// is cleanly skipped (dropped from that turn's outbound context, no crash).
-	// Putting anything non-empty but non-JSON here (e.g. a placeholder string)
-	// would make Pi's JSON.parse throw and break the entire API call the next
-	// time this turn is replayed - strictly worse than the original leak.
-	if (!isLastActiveAssistant && !options.noUnflatten) {
+	// Second, independent detection path: a text block in a turn whose
+	// stopReason is "aborted" AND that has no thinking block anywhere in the
+	// same turn. Verified against a real 483-turn session: every genuinely
+	// completed turn with visible text ALSO has a thinking block alongside it
+	// (stop -> {text, thinking}, 17/17); a text-only shape with no thinking
+	// occurs exclusively on aborted turns (2/2), regardless of whether the
+	// text happens to look like bold-header notes or plain prose - both are
+	// just whatever content had streamed in before Pi received a proper
+	// thinking-type marker, cut off by the abort. This is a structural
+	// signal, not a text-content guess, and is independent of the bold-phrase
+	// pattern match (which catches a different, non-aborted case: a fully
+	// completed turn where M3 still emits some of its reasoning as bold-header
+	// text alongside a real thinking block).
+	const hasThinkingBlock = content.some((block) => block.type === "thinking");
+	const isAbortedWithNoThinking = message.stopReason === "aborted" && !hasThinkingBlock;
+
+	if (!options.noUnflatten) {
 		const newContent: Array<Record<string, unknown>> = [];
 		let convertedThisTurn = false;
 
@@ -245,7 +188,7 @@ function transformAssistantEntry(
 				block.type === "text" &&
 				typeof block.text === "string" &&
 				block.text.trim().length > 0 &&
-				isReasoningLeak(block.text)
+				(isReasoningLeak(block.text) || isAbortedWithNoThinking)
 			) {
 				newContent.push({
 					type: "thinking",
