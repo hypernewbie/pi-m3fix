@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - **Fix (critical):** removed the `api === "anthropic-messages"` gate entirely.
   `/m3fix` previously refused to do anything at all — no relabel, no blank, no
