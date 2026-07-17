@@ -39,6 +39,7 @@ describe("repairSessionFile", () => {
 		expect(result.stats.relabeled).toBe(4);
 		expect(result.stats.blanked).toBe(1);
 		expect(result.stats.unflattened).toBe(3);
+		expect(result.stats.syntheticThinking).toBe(1);
 
 		const lines = await loadLines(WORK);
 
@@ -47,13 +48,18 @@ describe("repairSessionFile", () => {
 		expect(preAssistant.message.provider).toBe("m3");
 		expect(preAssistant.message.content[0].type).toBe("thinking");
 
-		// Last active assistant turn is relabeled; its real response text is
-		// left as text (not because it's last - because it doesn't match the
-		// leak pattern; see the dedicated last-turn-leak test below).
+		// Last active assistant turn is relabeled; its real response text is a
+		// genuine reply (doesn't match the leak pattern, see the dedicated
+		// last-turn-leak test below) so it's preserved as-is, but it came from a
+		// different provider with no thinking block at all - it now gets a
+		// synthetic thinking block inserted before it (separate mechanism from
+		// unflatten: the reply itself is never touched or hidden).
 		const lastActive = lines.find((e) => e.id === "00000008");
 		expect(lastActive.message.provider).toBe("m3");
-		expect(lastActive.message.content[0].type).toBe("text");
-		expect(lastActive.message.content[0].text).toBe("Here is the real final answer");
+		expect(lastActive.message.content[0].type).toBe("thinking");
+		expect(lastActive.message.content[0].thinkingSignature).toBe("");
+		expect(lastActive.message.content[1].type).toBe("text");
+		expect(lastActive.message.content[1].text).toBe("Here is the real final answer");
 
 		// Non-last active assistant turn with bold-phrase leak → unflattened
 		const activeReasoning = lines.find((e) => e.id === "00000004");
@@ -79,13 +85,14 @@ describe("repairSessionFile", () => {
 		});
 
 		// Only the three bold-phrase leaks (00000002, 00000004, 00000007) are unflattened,
-		// not the real response in 00000008.
+		// not the real response in 00000008 (it gets a synthetic thinking block
+		// prepended instead - a separate mechanism, see the dedicated test below).
 		expect(result.stats.unflattened).toBe(3);
 
 		const lines = await loadLines(WORK);
 		const lastActive = lines.find((e) => e.id === "00000008");
-		expect(lastActive.message.content[0].type).toBe("text");
-		expect(lastActive.message.content[0].text).toBe("Here is the real final answer");
+		expect(lastActive.message.content[1].type).toBe("text");
+		expect(lastActive.message.content[1].text).toBe("Here is the real final answer");
 	});
 
 	it("unflattens leaked reasoning even when it's the LAST active turn (regression: previously always skipped)", async () => {
@@ -264,6 +271,7 @@ describe("repairSessionFile", () => {
 			blanked: 0,
 			unflattened: 0,
 			neutralizedRedacted: 0,
+			syntheticThinking: 0,
 			activeAssistantTurns: 0,
 		});
 	});
@@ -331,5 +339,136 @@ describe("repairSessionFile", () => {
 		const after = await readFile(WORK, "utf8");
 		expect(after).toBe(before);
 		expect(existsSync(`${WORK}.bak2`)).toBe(false);
+	});
+
+	it("inserts synthetic thinking before a foreign-provider text-only reply with no thinking (mimicry gap)", async () => {
+		// Verified real mechanism (not a guess): a foreign-model turn with a text
+		// reply and no thinking block gets replayed to M3 on the next call as a
+		// bare {role: assistant, content: [text]} turn - structurally identical
+		// to M3's own broken shape. In a real repro, M3's very next turn copied
+		// that exact shape. This is not a leak (the text is a genuine reply from
+		// the OTHER model, e.g. GPT), so it must never be hidden/converted - only
+		// a synthetic thinking block gets inserted in front of it.
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"foreign-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"go ahead"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Sounds good, all set."}],"provider":"other-provider","api":"other-api","model":"other-model","stopReason":"stop","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" },
+		});
+
+		expect(result.stats.syntheticThinking).toBe(1);
+
+		const lines = await loadLines(WORK);
+		const entry = lines.find((e) => e.id === "2");
+		expect(entry.message.content[0].type).toBe("thinking");
+		expect(entry.message.content[0].thinkingSignature).toBe("");
+		expect(typeof entry.message.content[0].thinking).toBe("string");
+		expect(entry.message.content[0].thinking.length).toBeGreaterThan(0);
+		// The real reply is preserved verbatim, never hidden or altered
+		expect(entry.message.content[1].type).toBe("text");
+		expect(entry.message.content[1].text).toBe("Sounds good, all set.");
+	});
+
+	it("inserts synthetic thinking before a foreign-provider toolCall-only turn with no thinking", async () => {
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"foreign-tool-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"check it"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"tc1","name":"bash","arguments":{"command":"ls"}}],"provider":"other-provider","api":"other-api","model":"other-model","stopReason":"toolUse","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" },
+		});
+
+		expect(result.stats.syntheticThinking).toBe(1);
+
+		const lines = await loadLines(WORK);
+		const entry = lines.find((e) => e.id === "2");
+		expect(entry.message.content[0].type).toBe("thinking");
+		expect(entry.message.content[1].type).toBe("toolCall");
+	});
+
+	it("does not insert synthetic thinking for M3's own text-only reply (not a different provider)", async () => {
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"native-reply-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"done?"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"provider":"minimax","api":"anthropic-messages","model":"MiniMax-M3","stopReason":"stop","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" },
+		});
+
+		expect(result.stats.syntheticThinking).toBe(0);
+		expect(result.changed).toBe(false);
+
+		const lines = await loadLines(WORK);
+		const entry = lines.find((e) => e.id === "2");
+		expect(entry.message.content[0].type).toBe("text");
+	});
+
+	it("is idempotent: re-running on an already-repaired file picks the same placeholder and reports zero further changes", async () => {
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"idempotent-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"go ahead"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Sounds good, all set."}],"provider":"other-provider","api":"other-api","model":"other-model","stopReason":"stop","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const target = { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" };
+		const first = await repairSessionFile(WORK, { target });
+		expect(first.stats.syntheticThinking).toBe(1);
+
+		const linesAfterFirst = await loadLines(WORK);
+		const placeholderAfterFirst = linesAfterFirst.find((e) => e.id === "2").message.content[0].thinking;
+
+		const second = await repairSessionFile(WORK, { target });
+		expect(second.changed).toBe(false);
+		expect(second.stats.syntheticThinking).toBe(0);
+
+		const linesAfterSecond = await loadLines(WORK);
+		const placeholderAfterSecond = linesAfterSecond.find((e) => e.id === "2").message.content[0].thinking;
+		expect(placeholderAfterSecond).toBe(placeholderAfterFirst);
+	});
+
+	it("skips synthetic thinking insertion when noSyntheticThinking is set", async () => {
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"opt-out-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"go ahead"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Sounds good, all set."}],"provider":"other-provider","api":"other-api","model":"other-model","stopReason":"stop","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" },
+			noSyntheticThinking: true,
+		});
+
+		expect(result.stats.syntheticThinking).toBe(0);
+
+		const lines = await loadLines(WORK);
+		const entry = lines.find((e) => e.id === "2");
+		expect(entry.message.content[0].type).toBe("text");
 	});
 });

@@ -74,6 +74,7 @@ Options:
 - `--model <id>` — override the target model.
 - `--no-relabel` — skip provider/API/model relabeling.
 - `--no-unflatten` — skip text-to-thinking repair.
+- `--no-synthetic-thinking` — skip synthetic thinking insertion (see below).
 - `--allow-empty-signature` — deprecated no-op (kept for backward compatibility). The repair now always runs for `anthropic-messages` models regardless of registry metadata.
 
 ## Behavior
@@ -87,8 +88,10 @@ For assistant messages, `/m3fix` can:
 3. Neutralize foreign `redacted` thinking blocks — same rule: only when the
    message is being relabeled away from a different provider.
 4. Convert leaked-reasoning text blocks back into thinking blocks.
+5. Insert a synthetic thinking block before a different-provider turn's
+   genuine reply when that turn has no thinking block at all.
 
-All four operations work for **any API** (`anthropic-messages`,
+All five operations work for **any API** (`anthropic-messages`,
 `openai-completions`, `openai-responses`, etc.) — there is no API allowlist.
 M3 can be proxied through any of them, and none of these repairs are
 Anthropic-specific: `thinkingSignature` is a generic Pi concept (for
@@ -103,10 +106,21 @@ preserving real responses that happen to start with bold
 (`"**Vibe: hard.** This is not a shallow port..."` → kept as text).
 Use `--no-unflatten` to skip this step.
 
-Unflatten applies to **all** assistant turns except the last active one.
-Pre-compaction turns are included because they are displayed in the TUI (even
-though they aren't sent to the LLM), and leaving leaked reasoning visible is the
-exact problem this tool solves.
+Unflatten applies to **every** assistant turn, including the most recently
+produced one. Pre-compaction turns are included because they are displayed in
+the TUI (even though they aren't sent to the LLM), and leaving leaked
+reasoning visible is the exact problem this tool solves.
+
+A turn that genuinely came from a different provider (a real model switch,
+not M3's own leak) can have a real reply with no thinking block at all -
+some providers don't emit anthropic-style thinking. Once relabeled and
+replayed to M3 on a later call, that turn is serialized as a bare
+text/tool-call-only assistant turn, indistinguishable from M3's own broken
+shape - and M3 can pick up that shape on its very next reply. `/m3fix` closes
+this gap by inserting a synthetic thinking block before the existing reply
+(never replacing or hiding it), picked deterministically from a small
+rotating pool of generic placeholders so repeated runs stay idempotent. Use
+`--no-synthetic-thinking` to skip this step.
 
 ## Safety
 

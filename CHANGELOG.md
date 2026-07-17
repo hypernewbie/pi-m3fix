@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.0
+
+- **Added: synthetic thinking insertion.** A separate gap from every prior fix
+  in this tool: a turn genuinely produced by a *different* provider/model (not
+  M3's own leak) can have a real reply with no thinking block at all, because
+  some providers don't emit anthropic-style thinking. Once relabeled and
+  replayed to M3 on a later call, that turn is serialized as a bare
+  text/tool-call-only assistant turn - structurally identical to M3's own
+  broken shape. Verified directly against a real repro session: right after
+  such a foreign-provider turn sat in context, M3's very next reply copied
+  that exact text-only-no-thinking shape for the first time in the whole
+  session. `/m3fix` now inserts a synthetic thinking block before the
+  existing reply on any different-provider turn that has none - the real
+  reply is never touched, hidden, or altered, only prepended to. Wording is
+  picked deterministically (hashed on the entry id) from a small rotating
+  pool of generic placeholders, so repeated runs on an already-repaired file
+  stay idempotent and never drift, and no single repeated phrase becomes its
+  own imitable pattern. Skips turns whose text still matches the bold-only
+  leak pattern (that's unflatten's job). New `--no-synthetic-thinking` flag to
+  opt out.
+- Test coverage: 100% statements/lines/functions maintained; added dedicated
+  coverage for the new synthetic-thinking module and its integration into the
+  repair pipeline (foreign text-only replies, foreign tool-call-only turns,
+  idempotency across repeated runs, the opt-out flag, and the interaction
+  with `--no-unflatten`).
+
 ## 0.5.0
 
 - **Fix (critical, root cause):** found by inspecting a real, live-broken

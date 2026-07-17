@@ -2,12 +2,15 @@ import { readFile, writeFile, rename } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { SessionManager, type SessionEntry, type SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import type { TargetModel } from "./target-model.ts";
+import { isAbortedWithNoThinking, isReasoningLeak, shouldUnflattenBlock } from "./leak-detect.ts";
+import { needsSyntheticThinking, pickSyntheticThinking } from "./synthetic-thinking.ts";
 
 export interface RepairStats {
 	relabeled: number;
 	blanked: number;
 	unflattened: number;
 	neutralizedRedacted: number;
+	syntheticThinking: number;
 	activeAssistantTurns: number;
 }
 
@@ -22,6 +25,7 @@ export interface RepairOptions {
 	dryRun?: boolean;
 	noRelabel?: boolean;
 	noUnflatten?: boolean;
+	noSyntheticThinking?: boolean;
 }
 
 export async function repairSessionFile(
@@ -39,6 +43,7 @@ export async function repairSessionFile(
 		blanked: 0,
 		unflattened: 0,
 		neutralizedRedacted: 0,
+		syntheticThinking: 0,
 		activeAssistantTurns: 0,
 	};
 
@@ -176,20 +181,14 @@ function transformAssistantEntry(
 	// pattern match (which catches a different, non-aborted case: a fully
 	// completed turn where M3 still emits some of its reasoning as bold-header
 	// text alongside a real thinking block).
-	const hasThinkingBlock = content.some((block) => block.type === "thinking");
-	const isAbortedWithNoThinking = message.stopReason === "aborted" && !hasThinkingBlock;
+	const abortedWithNoThinking = isAbortedWithNoThinking(message.stopReason, content);
 
 	if (!options.noUnflatten) {
 		const newContent: Array<Record<string, unknown>> = [];
 		let convertedThisTurn = false;
 
 		for (const block of content) {
-			if (
-				block.type === "text" &&
-				typeof block.text === "string" &&
-				block.text.trim().length > 0 &&
-				(isReasoningLeak(block.text) || isAbortedWithNoThinking)
-			) {
+			if (shouldUnflattenBlock(block, abortedWithNoThinking)) {
 				newContent.push({
 					type: "thinking",
 					thinking: block.text,
@@ -209,21 +208,49 @@ function transformAssistantEntry(
 		}
 	}
 
-	return changed;
-}
+	// Foreign-provider turns that never had a thinking block to begin with are
+	// a separate, independent gap from the unflatten cases above: those only
+	// touch M3's OWN leaked/aborted content. A turn genuinely produced by a
+	// different model (e.g. a text-only "stop" reply from a provider that
+	// doesn't emit anthropic-style thinking blocks) is not a leak to repair -
+	// it's a legitimate reply from that model. But once relabeled and replayed
+	// to M3 on a later call, it is serialized as a bare {role: assistant,
+	// content: [text]} turn, structurally identical to M3's own broken shape.
+	// Verified directly in a real repro: right after such a foreign turn sat
+	// in context, M3's very next reply copied that exact text-only-no-thinking
+	// shape for the first time in the whole session - direct evidence M3
+	// pattern-matches on the shape of its own immediately-preceding context,
+	// not just its own actual behaviour. The fix is not to touch the real
+	// reply (it's genuine content, not a leak) but to insert a synthetic
+	// thinking block before it, so the shape M3 sees is always
+	// "thinking -> reply", never "reply" alone. Wording can't be genuine (a
+	// foreign model's real reasoning isn't recoverable, and it "thinks
+	// different" from M3 anyway), so this only closes the structural gap.
+	if (wasFromDifferentProvider && !options.noSyntheticThinking) {
+		const currentContent = Array.isArray(message.content)
+			? (message.content as Array<Record<string, unknown>>)
+			: [];
+		// If a text block still matches the bold-phrase leak pattern here (e.g.
+		// noUnflatten was explicitly set, so the leak was intentionally left
+		// alone), don't ALSO insert a synthetic thinking block in front of it -
+		// that text is a known leak, not a genuine reply, and belongs to
+		// unflatten's job, not this one.
+		const hasRemainingLeak = currentContent.some(
+			(block) => block.type === "text" && typeof block.text === "string" && isReasoningLeak(block.text),
+		);
+		if (!hasRemainingLeak && needsSyntheticThinking(currentContent)) {
+			message.content = [
+				{
+					type: "thinking",
+					thinking: pickSyntheticThinking(entry.id),
+					thinkingSignature: "",
+				},
+				...currentContent,
+			];
+			stats.syntheticThinking++;
+			changed = true;
+		}
+	}
 
-/**
- * Detect M3's flattened reasoning: text that consists entirely of **bold phrase**
- * segments with no prose content. Real assistant responses have prose
- * between/after bold markers.
- *
- * Examples:
- *   "**Checking license metadata**"                        → true  (leak)
- *   "**Inspecting X**\n\n**Planning Y**"                      → true  (leak)
- *   "**Vibe: hard.** This is not a shallow port — it's..."    → false (real response)
- *   "Yes — there's a file in /path..."                        → false (real response)
- */
-function isReasoningLeak(text: string): boolean {
-	const stripped = text.replace(/\*\*.+?\*\*/g, "").trim();
-	return stripped.length === 0;
+	return changed;
 }

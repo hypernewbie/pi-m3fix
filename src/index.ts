@@ -81,12 +81,13 @@ async function runM3Fix(args: string, ctx: ExtensionCommandContext) {
 		dryRun: options.dryRun,
 		noRelabel: options.noRelabel,
 		noUnflatten: options.noUnflatten,
+		noSyntheticThinking: options.noSyntheticThinking,
 	});
 
 	const mode = options.dryRun ? "Would" : "Did";
 	notify(
 		ctx,
-		`${mode} relabel ${result.stats.relabeled}, blank ${result.stats.blanked}, unflatten ${result.stats.unflattened} blocks, neutralize ${result.stats.neutralizedRedacted} foreign-redacted blocks (${result.stats.activeAssistantTurns} turns).`,
+		`${mode} relabel ${result.stats.relabeled}, blank ${result.stats.blanked}, unflatten ${result.stats.unflattened} blocks, neutralize ${result.stats.neutralizedRedacted} foreign-redacted blocks, insert ${result.stats.syntheticThinking} synthetic thinking blocks (${result.stats.activeAssistantTurns} turns).`,
 		result.changed ? "info" : "warning",
 	);
 
