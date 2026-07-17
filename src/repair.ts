@@ -7,6 +7,7 @@ import {
 	needsSyntheticThinking,
 	needsSyntheticThinkingForToolCall,
 	pickSyntheticThinking,
+	syntheticSignature,
 } from "./synthetic-thinking.ts";
 
 export interface RepairStats {
@@ -15,6 +16,7 @@ export interface RepairStats {
 	unflattened: number;
 	neutralizedRedacted: number;
 	syntheticThinking: number;
+	signed: number;
 	activeAssistantTurns: number;
 }
 
@@ -31,6 +33,7 @@ export interface RepairOptions {
 	noUnflatten?: boolean;
 	noSyntheticThinking?: boolean;
 	rewrite?: boolean;
+	noSign?: boolean;
 }
 
 export async function repairSessionFile(
@@ -49,6 +52,7 @@ export async function repairSessionFile(
 		unflattened: 0,
 		neutralizedRedacted: 0,
 		syntheticThinking: 0,
+		signed: 0,
 		activeAssistantTurns: 0,
 	};
 
@@ -270,6 +274,32 @@ function transformAssistantEntry(
 				...currentContent,
 			];
 			stats.syntheticThinking++;
+			changed = true;
+		}
+	}
+
+	// Signing pass, last so it covers blocks created or blanked above as well
+	// as pre-existing ones. Pi's anthropic-messages serialization replays a
+	// thinking block as thinking only when its signature is non-empty
+	// (empty-signature blocks are converted back to plain text at request
+	// time), and natively produced thinking blocks always carry a signature -
+	// so an empty signature left here would undo the repair on the wire.
+	// Anthropic-messages targets only: under other APIs the signature field
+	// holds provider-specific payloads that cannot be fabricated. Redacted
+	// blocks and empty thinking text are skipped (different replay paths).
+	// Seeded per entry+block index: deterministic, idempotent re-runs.
+	if (!options.noSign && options.target.api === "anthropic-messages") {
+		const finalContent = Array.isArray(message.content)
+			? (message.content as Array<Record<string, unknown>>)
+			: [];
+		for (let i = 0; i < finalContent.length; i++) {
+			const block = finalContent[i];
+			if (block.type !== "thinking") continue;
+			if (block.redacted === true) continue;
+			if (typeof block.thinking !== "string" || block.thinking.trim().length === 0) continue;
+			if (typeof block.thinkingSignature === "string" && block.thinkingSignature.length > 0) continue;
+			block.thinkingSignature = syntheticSignature(`${entry.id}:${i}`);
+			stats.signed++;
 			changed = true;
 		}
 	}

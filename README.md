@@ -75,6 +75,11 @@ Options:
 - `--no-relabel` — skip provider/API/model relabeling.
 - `--no-unflatten` — skip text-to-thinking repair.
 - `--no-synthetic-thinking` — skip synthetic thinking insertion (see below).
+- `--rewrite` — also catch toolCall-bearing turns with no thinking that are
+  already labeled as the target provider (see below). Opt-in.
+- `--no-sign` — skip filling signatures into empty-signature thinking blocks
+  (see below). Use for providers that cryptographically validate thinking
+  signatures.
 - `--allow-empty-signature` — deprecated no-op (kept for backward compatibility). The repair now always runs for `anthropic-messages` models regardless of registry metadata.
 
 ## Behavior
@@ -90,8 +95,10 @@ For assistant messages, `/m3fix` can:
 4. Convert leaked-reasoning text blocks back into thinking blocks.
 5. Insert a synthetic thinking block before a different-provider turn's
    genuine reply when that turn has no thinking block at all.
+6. Fill a deterministic non-empty signature into every non-redacted
+   thinking block that has an empty one (anthropic-messages targets only).
 
-All five operations work for **any API** (`anthropic-messages`,
+The first five operations work for **any API** (`anthropic-messages`,
 `openai-completions`, `openai-responses`, etc.) — there is no API allowlist.
 M3 can be proxied through any of them, and none of these repairs are
 Anthropic-specific: `thinkingSignature` is a generic Pi concept (for
@@ -136,6 +143,21 @@ be genuine M3 final summaries (verified real: stop-reason, text-only,
 no-toolCall replies in real sessions were substantive genuine answers, not
 leaks), and once the provider label is gone there's no way to tell a
 laundered-foreign clean reply apart from one of those by content alone.
+
+Signing exists because a repair that writes empty signatures is invisible
+where it matters: Pi's `anthropic-messages` request serialization only
+replays a thinking block as thinking when its signature is non-empty
+(unless the model registry sets `compat.allowEmptySignature`, which is
+unset for most anthropic-compatible providers). An empty-signature block is
+converted back to plain text at request time — so a session can look fully
+repaired on disk while the model still receives a history of text-only
+assistant turns. Natively produced thinking blocks always carry a
+signature; `/m3fix` fills a deterministic sha256-based one (idempotent
+across re-runs) so repaired blocks serialize the same way native ones do.
+This runs only for `anthropic-messages` targets: under other APIs the
+signature field holds provider-specific payloads that cannot be
+fabricated. Anthropic-compatible endpoints generally do not validate
+signature contents; for one that does, use `--no-sign`.
 
 ## Safety
 

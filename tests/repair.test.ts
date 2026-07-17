@@ -57,7 +57,7 @@ describe("repairSessionFile", () => {
 		const lastActive = lines.find((e) => e.id === "00000008");
 		expect(lastActive.message.provider).toBe("m3");
 		expect(lastActive.message.content[0].type).toBe("thinking");
-		expect(lastActive.message.content[0].thinkingSignature).toBe("");
+		expect(lastActive.message.content[0].thinkingSignature).toMatch(/^[0-9a-f]{64}$/);
 		expect(lastActive.message.content[1].type).toBe("text");
 		expect(lastActive.message.content[1].text).toBe("Here is the real final answer");
 
@@ -65,12 +65,12 @@ describe("repairSessionFile", () => {
 		const activeReasoning = lines.find((e) => e.id === "00000004");
 		expect(activeReasoning.message.provider).toBe("m3");
 		expect(activeReasoning.message.content[0].type).toBe("thinking");
-		expect(activeReasoning.message.content[0].thinkingSignature).toBe("");
+		expect(activeReasoning.message.content[0].thinkingSignature).toMatch(/^[0-9a-f]{64}$/);
 
 		// Mixed turn: already has thinking + leaked bold text → leaked text still unflattened
 		const mixedTurn = lines.find((e) => e.id === "00000007");
 		expect(mixedTurn.message.content[0].type).toBe("thinking");
-		expect(mixedTurn.message.content[0].thinkingSignature).toBe(""); // blanked
+		expect(mixedTurn.message.content[0].thinkingSignature).toMatch(/^[0-9a-f]{64}$/); // blanked, then signed
 		expect(mixedTurn.message.content[1].type).toBe("thinking"); // leaked text → thinking
 		expect(mixedTurn.message.content[1].thinking).toBe("**Executing the repair step**");
 
@@ -124,7 +124,7 @@ describe("repairSessionFile", () => {
 		const entry = lines.find((e) => e.id === "2");
 		expect(entry.message.content[0].type).toBe("thinking");
 		expect(entry.message.content[0].thinking).toBe("**Checking the most recent leaked turn**");
-		expect(entry.message.content[0].thinkingSignature).toBe("");
+		expect(entry.message.content[0].thinkingSignature).toMatch(/^[0-9a-f]{64}$/);
 	});
 
 	it("unflattens text from an aborted turn with no thinking block, regardless of content style", async () => {
@@ -272,6 +272,7 @@ describe("repairSessionFile", () => {
 			unflattened: 0,
 			neutralizedRedacted: 0,
 			syntheticThinking: 0,
+			signed: 0,
 			activeAssistantTurns: 0,
 		});
 	});
@@ -368,7 +369,7 @@ describe("repairSessionFile", () => {
 		const lines = await loadLines(WORK);
 		const entry = lines.find((e) => e.id === "2");
 		expect(entry.message.content[0].type).toBe("thinking");
-		expect(entry.message.content[0].thinkingSignature).toBe("");
+		expect(entry.message.content[0].thinkingSignature).toMatch(/^[0-9a-f]{64}$/);
 		expect(typeof entry.message.content[0].thinking).toBe("string");
 		expect(entry.message.content[0].thinking.length).toBeGreaterThan(0);
 		// The real reply is preserved verbatim, never hidden or altered
@@ -514,6 +515,90 @@ describe("repairSessionFile", () => {
 		const lines = await loadLines(WORK);
 		const entry = lines.find((e) => e.id === "2");
 		expect(entry.message.content[0].type).toBe("text");
+	});
+
+	it("signs a pre-existing native thinking block that has an empty signature", async () => {
+		// An empty-signature thinking block is replayed as plain text on the
+		// wire by Pi's anthropic-messages serialization, so leaving it unsigned
+		// keeps the request in the broken shape even when the file looks
+		// repaired. Native production always carries a signature; the signing
+		// pass restores that shape.
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"sign-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"do the thing"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Placeholder reasoning prose about the task.","thinkingSignature":""},{"type":"text","text":"Placeholder reply."}],"provider":"minimax","api":"anthropic-messages","model":"MiniMax-M3","stopReason":"stop","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const target = { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" };
+		const result = await repairSessionFile(WORK, { target });
+
+		expect(result.stats.signed).toBe(1);
+		expect(result.changed).toBe(true);
+
+		const lines = await loadLines(WORK);
+		const entry = lines.find((e) => e.id === "2");
+		expect(entry.message.content[0].thinkingSignature).toMatch(/^[0-9a-f]{64}$/);
+		// The thinking text itself is untouched
+		expect(entry.message.content[0].thinking).toBe("Placeholder reasoning prose about the task.");
+
+		// Idempotent: second run changes nothing and produces the same signature
+		const sigAfterFirst = entry.message.content[0].thinkingSignature;
+		const second = await repairSessionFile(WORK, { target });
+		expect(second.changed).toBe(false);
+		expect(second.stats.signed).toBe(0);
+		const linesAfterSecond = await loadLines(WORK);
+		expect(linesAfterSecond.find((e) => e.id === "2").message.content[0].thinkingSignature).toBe(sigAfterFirst);
+	});
+
+	it("skips signing when noSign is set", async () => {
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"no-sign-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"do the thing"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Placeholder reasoning prose about the task.","thinkingSignature":""}],"provider":"minimax","api":"anthropic-messages","model":"MiniMax-M3","stopReason":"stop","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" },
+			noSign: true,
+		});
+
+		expect(result.stats.signed).toBe(0);
+		expect(result.changed).toBe(false);
+
+		const lines = await loadLines(WORK);
+		expect(lines.find((e) => e.id === "2").message.content[0].thinkingSignature).toBe("");
+	});
+
+	it("does not sign for a non-anthropic-messages target API", async () => {
+		// Under other APIs the signature field carries provider-specific
+		// payloads that cannot be fabricated; inventing one would corrupt the
+		// native shape rather than restore it.
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"api-gate-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"do the thing"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Placeholder reasoning prose about the task.","thinkingSignature":""}],"provider":"m3","api":"openai-responses","model":"MiniMax-M3","stopReason":"stop","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "m3", api: "openai-responses", model: "MiniMax-M3" },
+		});
+
+		expect(result.stats.signed).toBe(0);
+
+		const lines = await loadLines(WORK);
+		expect(lines.find((e) => e.id === "2").message.content[0].thinkingSignature).toBe("");
 	});
 
 	it("skips synthetic thinking insertion when noSyntheticThinking is set", async () => {

@@ -31,6 +31,8 @@
  * one.
  */
 
+import { createHash } from "node:crypto";
+
 const PLACEHOLDERS = [
 	"Let me think about how to respond to this.",
 	"Considering the best way to answer this.",
@@ -41,6 +43,27 @@ const PLACEHOLDERS = [
 	"Let me consider what's being asked.",
 	"Pulling together a response to this.",
 ] as const;
+
+/**
+ * Deterministic non-empty signature for a repaired thinking block.
+ *
+ * Pi's anthropic-messages serialization only replays a thinking block as
+ * thinking when its signature is non-empty (unless the model registry sets
+ * compat.allowEmptySignature for the model, which is unset for most
+ * anthropic-compatible providers). A block written with an empty signature
+ * is converted back to plain text at request time, so a repair that writes
+ * "" is invisible on the wire even though the file looks correct. Natively
+ * produced thinking blocks carry non-empty signatures, so repaired blocks
+ * must too, or the model still sees a history of text-only assistant turns.
+ *
+ * sha256 of a stable per-block seed keeps repeated runs byte-identical
+ * (idempotent re-runs, no phantom changes). Providers that
+ * cryptographically validate signatures will reject fabricated ones;
+ * --no-sign opts out for those.
+ */
+export function syntheticSignature(seed: string): string {
+	return createHash("sha256").update(`m3fix:${seed}`).digest("hex");
+}
 
 /** Stable djb2-style string hash. Deterministic across runs and platforms. */
 function stableHash(input: string): number {

@@ -3,7 +3,23 @@ import {
 	needsSyntheticThinking,
 	needsSyntheticThinkingForToolCall,
 	pickSyntheticThinking,
+	syntheticSignature,
 } from "../src/synthetic-thinking.ts";
+
+describe("syntheticSignature", () => {
+	it("produces a 64-char lowercase hex string", () => {
+		expect(syntheticSignature("entry-1:0")).toMatch(/^[0-9a-f]{64}$/);
+	});
+
+	it("is deterministic for the same seed", () => {
+		expect(syntheticSignature("entry-1:0")).toBe(syntheticSignature("entry-1:0"));
+	});
+
+	it("differs across different seeds", () => {
+		expect(syntheticSignature("entry-1:0")).not.toBe(syntheticSignature("entry-1:1"));
+		expect(syntheticSignature("entry-1:0")).not.toBe(syntheticSignature("entry-2:0"));
+	});
+});
 
 describe("pickSyntheticThinking", () => {
 	it("is deterministic for the same seed", () => {

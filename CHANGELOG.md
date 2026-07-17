@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.8.0
+
+- **Added: signature filling (`signed` stat, `--no-sign` opt-out).** A repair
+  that writes empty `thinkingSignature` values is invisible where it
+  matters: Pi's `anthropic-messages` request serialization only replays a
+  thinking block as thinking when its signature is non-empty (unless the
+  model registry sets `compat.allowEmptySignature`, which is unset for most
+  anthropic-compatible providers). An empty-signature block is converted
+  back to plain text at request time — so a session could look fully
+  repaired on disk while the model still received a history of text-only
+  assistant turns, and every previous version of this tool wrote exactly
+  those empty signatures. `/m3fix` now fills a deterministic sha256-based
+  signature (seeded per entry+block, idempotent across re-runs) into every
+  non-redacted, non-empty thinking block that has none — covering blocks it
+  creates (unflatten, synthetic thinking), blocks it blanks during
+  relabeling, and pre-existing empty-signature blocks alike. Restricted to
+  `anthropic-messages` targets: under other APIs the signature field holds
+  provider-specific payloads that cannot be fabricated (for
+  `openai-responses` it is a real reasoning-item payload; inventing one
+  would corrupt the request). Anthropic-compatible endpoints generally do
+  not validate signature contents; for one that does, use `--no-sign`.
+- README: documented `--rewrite` in the options list (missed in 0.7.0) and
+  added `--no-sign`.
+- Test coverage: 100% statements/lines/functions maintained (92 tests).
+
 ## 0.7.0
 
 - **Added: `--rewrite` flag.** Fixes a real, confirmed-stuck case: once a

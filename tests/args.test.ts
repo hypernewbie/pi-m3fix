@@ -40,10 +40,16 @@ describe("parseCommandArgs", () => {
 		expect(result.rewrite).toBe(true);
 	});
 
-	it("defaults --rewrite and --no-synthetic-thinking to false", () => {
+	it("parses --no-sign", () => {
+		const result = parseCommandArgs("--no-sign");
+		expect(result.noSign).toBe(true);
+	});
+
+	it("defaults --rewrite, --no-synthetic-thinking, and --no-sign to false", () => {
 		const result = parseCommandArgs("");
 		expect(result.rewrite).toBe(false);
 		expect(result.noSyntheticThinking).toBe(false);
+		expect(result.noSign).toBe(false);
 	});
 
 	it("parses target overrides individually", () => {
