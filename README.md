@@ -122,6 +122,21 @@ this gap by inserting a synthetic thinking block before the existing reply
 rotating pool of generic placeholders so repeated runs stay idempotent. Use
 `--no-synthetic-thinking` to skip this step.
 
+Once a turn has been relabeled to the target provider - by this tool, an
+older version of it, or any other script - its `provider` field permanently
+reads as native. If that relabeling happened before synthetic thinking
+insertion existed, there is no way for a normal run to know the turn used to
+be foreign, and it stays stuck with no thinking forever, no matter how many
+times `/m3fix` runs afterward. `--rewrite` catches this: it also inserts
+synthetic thinking on any toolCall-bearing turn with no thinking block,
+regardless of its current provider label - trusting the verified invariant
+that M3 always thinks before any tool call. It deliberately does **not**
+touch text-only turns with no tool call, even with `--rewrite`: those might
+be genuine M3 final summaries (verified real: stop-reason, text-only,
+no-toolCall replies in real sessions were substantive genuine answers, not
+leaks), and once the provider label is gone there's no way to tell a
+laundered-foreign clean reply apart from one of those by content alone.
+
 ## Safety
 
 - Creates a one-time `.bak2` backup before writing.

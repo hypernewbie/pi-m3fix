@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.0
+
+- **Added: `--rewrite` flag.** Fixes a real, confirmed-stuck case: once a
+  turn has been relabeled to the target provider - by this tool, an older
+  version of it, or any other script - its `provider` field permanently
+  reads as native, and the normal synthetic-thinking check (v0.6.0) can never
+  again prove it used to be foreign. Traced directly against a real session:
+  a turn confirmed foreign in a pre-repair backup (toolCall-only, no
+  thinking) had already been relabeled by an earlier repair pass that
+  predated synthetic-thinking entirely, permanently hiding it from every
+  subsequent run - `/m3fix` reported no changes while the turn stayed
+  visibly broken. `--rewrite` is opt-in and catches this by inserting
+  synthetic thinking on any toolCall-bearing turn with no thinking block,
+  regardless of current provider label - trusting the verified structural
+  invariant that M3 always thinks before any tool call. Deliberately does
+  **not** extend to text-only turns with no tool call, even with
+  `--rewrite`: those might be genuine M3 final summaries (verified real:
+  46/46 stop-reason, text-only, no-toolCall samples in real sessions were
+  substantive genuine answers, not leaks), and once the provider label is
+  gone there is no way to tell a laundered-foreign clean reply apart from one
+  of those by content alone - only the unambiguous toolCall signal is
+  trusted in this weaker-signal mode.
+- Test coverage: 100% statements/lines/functions maintained.
+
 ## 0.6.0
 
 - **Added: synthetic thinking insertion.** A separate gap from every prior fix

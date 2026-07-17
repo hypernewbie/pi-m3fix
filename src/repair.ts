@@ -3,7 +3,11 @@ import { existsSync } from "node:fs";
 import { SessionManager, type SessionEntry, type SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 import type { TargetModel } from "./target-model.ts";
 import { isAbortedWithNoThinking, isReasoningLeak, shouldUnflattenBlock } from "./leak-detect.ts";
-import { needsSyntheticThinking, pickSyntheticThinking } from "./synthetic-thinking.ts";
+import {
+	needsSyntheticThinking,
+	needsSyntheticThinkingForToolCall,
+	pickSyntheticThinking,
+} from "./synthetic-thinking.ts";
 
 export interface RepairStats {
 	relabeled: number;
@@ -26,6 +30,7 @@ export interface RepairOptions {
 	noRelabel?: boolean;
 	noUnflatten?: boolean;
 	noSyntheticThinking?: boolean;
+	rewrite?: boolean;
 }
 
 export async function repairSessionFile(
@@ -226,7 +231,7 @@ function transformAssistantEntry(
 	// "thinking -> reply", never "reply" alone. Wording can't be genuine (a
 	// foreign model's real reasoning isn't recoverable, and it "thinks
 	// different" from M3 anyway), so this only closes the structural gap.
-	if (wasFromDifferentProvider && !options.noSyntheticThinking) {
+	if (!options.noSyntheticThinking) {
 		const currentContent = Array.isArray(message.content)
 			? (message.content as Array<Record<string, unknown>>)
 			: [];
@@ -238,7 +243,24 @@ function transformAssistantEntry(
 		const hasRemainingLeak = currentContent.some(
 			(block) => block.type === "text" && typeof block.text === "string" && isReasoningLeak(block.text),
 		);
-		if (!hasRemainingLeak && needsSyntheticThinking(currentContent)) {
+		// Two ways to qualify:
+		//  1. wasFromDifferentProvider (definitely foreign per the CURRENT
+		//     provider label) - trust the full needsSyntheticThinking check,
+		//     including text-only replies (the original, proven-correct case).
+		//  2. --rewrite (opt-in): the provider label may have already been
+		//     laundered to look native by an earlier repair pass (an older
+		//     m3fix version, underp.py, or a previous run of this version
+		//     before this feature existed) - permanently destroying the only
+		//     signal that turn used to be foreign. Only the toolCall-bearing
+		//     case is trusted here (structural, verified: M3 always thinks
+		//     before any tool call, regardless of provenance) - text-only
+		//     replies are left alone, since a laundered-foreign clean reply and
+		//     a genuine M3 final summary are indistinguishable by content once
+		//     the provider label is gone.
+		const qualifies =
+			(wasFromDifferentProvider && needsSyntheticThinking(currentContent)) ||
+			(options.rewrite && needsSyntheticThinkingForToolCall(currentContent));
+		if (!hasRemainingLeak && qualifies) {
 			message.content = [
 				{
 					type: "thinking",

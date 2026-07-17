@@ -34,6 +34,18 @@ describe("parseCommandArgs", () => {
 		expect(result.allowEmptySignature).toBe(true);
 	});
 
+	it("parses --no-synthetic-thinking and --rewrite", () => {
+		const result = parseCommandArgs("--no-synthetic-thinking --rewrite");
+		expect(result.noSyntheticThinking).toBe(true);
+		expect(result.rewrite).toBe(true);
+	});
+
+	it("defaults --rewrite and --no-synthetic-thinking to false", () => {
+		const result = parseCommandArgs("");
+		expect(result.rewrite).toBe(false);
+		expect(result.noSyntheticThinking).toBe(false);
+	});
+
 	it("parses target overrides individually", () => {
 		expect(parseCommandArgs("--provider m3").target).toEqual({ provider: "m3" });
 		expect(parseCommandArgs("--api anthropic-messages").target).toEqual({ api: "anthropic-messages" });

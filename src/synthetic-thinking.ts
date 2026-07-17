@@ -81,3 +81,33 @@ export function needsSyntheticThinking(content: SyntheticThinkingContentBlock[])
 			(block.type === "text" && typeof block.text === "string" && block.text.trim().length > 0),
 	);
 }
+
+/**
+ * Weaker-signal variant for --rewrite: once a foreign turn has been
+ * relabeled to the target provider by ANY prior pass (an older m3fix
+ * version, underp.py, or even a previous run of the current version before
+ * this feature existed), `provider` permanently reads as native and
+ * `needsSyntheticThinking`'s caller can never again prove the turn used to
+ * be foreign. Verified against a real stuck case: a turn confirmed foreign
+ * in an older pre-repair backup (openai-codex, toolCall-only, no thinking)
+ * had already been relabeled to the target provider by an earlier repair
+ * pass that predated synthetic-thinking entirely, permanently hiding it from
+ * every subsequent run.
+ *
+ * This only fires on a toolCall-bearing turn (matches the verified
+ * invariant that M3 always thinks before any tool call, regardless of
+ * provenance) and deliberately excludes text-only turns: a text-only reply
+ * with no thinking might genuinely be one of M3's own legitimate final
+ * summaries (verified real: 46/46 samples of stop-reason, text-only, no
+ * tool call turns in real sessions were substantive genuine answers, not
+ * leaks). Once a turn's original provider is lost to relabeling, there is no
+ * way to tell a laundered-foreign clean reply apart from a genuine M3
+ * summary by content alone, so text-only turns are left alone here - only
+ * the structural, unambiguous toolCall signal is trusted.
+ */
+export function needsSyntheticThinkingForToolCall(content: SyntheticThinkingContentBlock[]): boolean {
+	const hasThinking = content.some((block) => block.type === "thinking");
+	if (hasThinking) return false;
+
+	return content.some((block) => block.type === "toolCall");
+}

@@ -5,6 +5,7 @@ export interface M3FixOptions {
 	noRelabel: boolean;
 	noUnflatten: boolean;
 	noSyntheticThinking: boolean;
+	rewrite: boolean;
 	allowEmptySignature: boolean;
 	target?: {
 		provider?: string;
@@ -22,6 +23,7 @@ export function parseCommandArgs(input: string): M3FixOptions {
 		noRelabel: false,
 		noUnflatten: false,
 		noSyntheticThinking: false,
+		rewrite: false,
 		allowEmptySignature: false,
 	};
 
@@ -40,6 +42,8 @@ export function parseCommandArgs(input: string): M3FixOptions {
 			options.noUnflatten = true;
 		} else if (token === "--no-synthetic-thinking") {
 			options.noSyntheticThinking = true;
+		} else if (token === "--rewrite") {
+			options.rewrite = true;
 		} else if (token === "--allow-empty-signature") {
 			options.allowEmptySignature = true;
 		} else if (TARGET_FLAGS.has(token)) {

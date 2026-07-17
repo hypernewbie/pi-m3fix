@@ -449,6 +449,73 @@ describe("repairSessionFile", () => {
 		expect(placeholderAfterSecond).toBe(placeholderAfterFirst);
 	});
 
+	it("--rewrite catches an already-relabeled toolCall-only turn with no thinking (laundered-foreign case)", async () => {
+		// Verified real bug: a turn confirmed foreign in a pre-repair backup
+		// (toolCall-only, no thinking) had already been relabeled to the target
+		// provider by an earlier repair pass that predated synthetic-thinking
+		// entirely. Once provider already reads as native, wasFromDifferentProvider
+		// is permanently false and the normal synthetic-thinking path can never
+		// catch it again on any later run. This fixture simulates that exact
+		// stuck state directly (provider already equals target, content is
+		// toolCall-only, no thinking) - --rewrite must catch it anyway.
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"rewrite-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"check it"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"tc1","name":"bash","arguments":{"command":"ls"}}],"provider":"minimax","api":"anthropic-messages","model":"MiniMax-M3","stopReason":"toolUse","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const target = { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" };
+
+		// Without --rewrite: stuck, unfixable (already labeled native)
+		const withoutRewrite = await repairSessionFile(WORK, { target });
+		expect(withoutRewrite.changed).toBe(false);
+		const linesStillBroken = await loadLines(WORK);
+		expect(linesStillBroken.find((e) => e.id === "2").message.content[0].type).toBe("toolCall");
+
+		// With --rewrite: caught
+		const withRewrite = await repairSessionFile(WORK, { target, rewrite: true });
+		expect(withRewrite.stats.syntheticThinking).toBe(1);
+
+		const lines = await loadLines(WORK);
+		const entry = lines.find((e) => e.id === "2");
+		expect(entry.message.content[0].type).toBe("thinking");
+		expect(entry.message.content[1].type).toBe("toolCall");
+	});
+
+	it("--rewrite does NOT touch an already-native text-only reply with no tool call (protects genuine M3 summaries)", async () => {
+		// Verified real data: 46/46 samples of stop-reason, text-only, no-toolCall
+		// turns in real sessions were substantive genuine final answers, not
+		// leaks. Once a turn's provider already reads as native, there is no way
+		// to tell a laundered-foreign clean reply apart from a genuine M3 summary
+		// by content alone - --rewrite must stay conservative and leave text-only
+		// turns alone, trusting only the unambiguous toolCall signal.
+		await writeFile(
+			WORK,
+			[
+				'{"type":"session","version":3,"id":"rewrite-safe-test","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp"}',
+				'{"type":"message","id":"1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"done?"}],"timestamp":1}}',
+				'{"type":"message","id":"2","parentId":"1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Done. Committed as abc123, 3 files changed."}],"provider":"minimax","api":"anthropic-messages","model":"MiniMax-M3","stopReason":"stop","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":2}}',
+			].join("\n") + "\n",
+			"utf8",
+		);
+
+		const result = await repairSessionFile(WORK, {
+			target: { provider: "minimax", api: "anthropic-messages", model: "MiniMax-M3" },
+			rewrite: true,
+		});
+
+		expect(result.stats.syntheticThinking).toBe(0);
+		expect(result.changed).toBe(false);
+
+		const lines = await loadLines(WORK);
+		const entry = lines.find((e) => e.id === "2");
+		expect(entry.message.content[0].type).toBe("text");
+	});
+
 	it("skips synthetic thinking insertion when noSyntheticThinking is set", async () => {
 		await writeFile(
 			WORK,

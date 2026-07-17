@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { needsSyntheticThinking, pickSyntheticThinking } from "../src/synthetic-thinking.ts";
+import {
+	needsSyntheticThinking,
+	needsSyntheticThinkingForToolCall,
+	pickSyntheticThinking,
+} from "../src/synthetic-thinking.ts";
 
 describe("pickSyntheticThinking", () => {
 	it("is deterministic for the same seed", () => {
@@ -46,5 +50,30 @@ describe("needsSyntheticThinking", () => {
 
 	it("is false when the only text block is blank", () => {
 		expect(needsSyntheticThinking([{ type: "text", text: "   " }])).toBe(false);
+	});
+});
+
+describe("needsSyntheticThinkingForToolCall", () => {
+	it("is true for a toolCall-only turn with no thinking, even if already labeled native", () => {
+		expect(needsSyntheticThinkingForToolCall([{ type: "toolCall", id: "1", name: "read", arguments: {} }])).toBe(
+			true,
+		);
+	});
+
+	it("is false for a text-only turn with no toolCall (protects genuine M3 summaries)", () => {
+		expect(needsSyntheticThinkingForToolCall([{ type: "text", text: "Done. Committed as abc123." }])).toBe(false);
+	});
+
+	it("is false when a thinking block is already present", () => {
+		expect(
+			needsSyntheticThinkingForToolCall([
+				{ type: "thinking", thinking: "already thought", thinkingSignature: "" },
+				{ type: "toolCall", id: "1", name: "read", arguments: {} },
+			]),
+		).toBe(false);
+	});
+
+	it("is false for empty content", () => {
+		expect(needsSyntheticThinkingForToolCall([])).toBe(false);
 	});
 });

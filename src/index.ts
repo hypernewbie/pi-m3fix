@@ -82,6 +82,7 @@ async function runM3Fix(args: string, ctx: ExtensionCommandContext) {
 		noRelabel: options.noRelabel,
 		noUnflatten: options.noUnflatten,
 		noSyntheticThinking: options.noSyntheticThinking,
+		rewrite: options.rewrite,
 	});
 
 	const mode = options.dryRun ? "Would" : "Did";
